@@ -11,7 +11,9 @@ import type { FormExtraction, FormField } from "./parsers";
 function f(value: string | null, confidence: Confidence = "high"): ExtractedField {
     return { value, found: value !== null, confidence };
 }
-function ff<V = string>(value: V | null, confidence: Confidence = "high"): FormField<V> {
+function ff<V>(value: V, confidence?: Confidence): FormField<V>;
+function ff(value: null, confidence?: Confidence): FormField<string>;
+function ff(value: unknown, confidence: Confidence = "high"): FormField<unknown> {
     return { value, confidence };
 }
 

@@ -1,4 +1,26 @@
-import { sql } from "@vercel/postgres";
+import pg from "pg";
+
+const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined,
+});
+
+/**
+ * Tagged-template + .query() wrapper around pg.Pool.
+ *
+ * Supports two call styles used across the codebase:
+ *   sql`SELECT * FROM t WHERE id = ${val}`        — tagged template
+ *   sql.query("SELECT ... $1", [val])              — parameterised string
+ */
+function sql(strings: TemplateStringsArray, ...values: unknown[]) {
+    const text = strings.reduce(
+        (acc, str, i) => acc + str + (i < values.length ? `$${i + 1}` : ""),
+        "",
+    );
+    return pool.query(text, values);
+}
+
+sql.query = (text: string, values?: unknown[]) => pool.query(text, values);
 
 export { sql };
 

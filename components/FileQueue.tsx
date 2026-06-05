@@ -1,3 +1,4 @@
+import React from "react";
 import { FileText, FileArchive, X, Loader2, RotateCcw } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { OverallBadge, DetectChip } from "./StatusBadges";
@@ -28,7 +29,7 @@ function FileRow({ item, onRemove, onOverride, disabled }:
     const Icon = item.kind === "zip" ? FileArchive : FileText;
     const d = item.detection;
 
-    const stateText: Record<string, JSX.Element> = {
+    const stateText: Record<string, React.ReactNode> = {
         detecting:    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-blue-600"><Loader2 size={14} className="animate-spin" /> Checking…</span>,
         queued:       <span className="whitespace-nowrap text-xs font-medium text-green-700">Ready</span>,
         review:       <span className="whitespace-nowrap text-xs text-amber-600">Needs review</span>,

@@ -129,7 +129,8 @@ async function callModelWithRetry(input: ExtractionInput, systemPrompt: string, 
 }
 
 /** Images and PDFs require different content-block shapes. */
-function buildSourceBlock(input: ExtractionInput): Anthropic.ContentBlockParam {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildSourceBlock(input: ExtractionInput): any {
     if (input.mediaType === "application/pdf") {
         return { type: "document", source: { type: "base64", media_type: "application/pdf", data: input.base64 } };
     }
