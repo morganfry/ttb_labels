@@ -1,0 +1,230 @@
+# TTB Label Verification — Prototype
+
+An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads one or more combined application PDFs; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table.
+
+This is a standalone proof-of-concept. It does not integrate with the live COLA system.
+
+---
+
+## Features
+
+- **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed). ZIP archives are accepted at the intake (server-side expansion; see limitations).
+- **Pre-flight detection** — before any processing, each PDF is inspected to confirm it contains both a filled Part I and an affixed label. Documents missing a piece, or read with low confidence, are flagged for review with a plain-language reason and an explicit "Process anyway" override.
+- **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
+- **Verification** — deterministic matching checks each field with the logic appropriate to it: tolerant matching for names, numeric tolerance for alcohol content and net contents, strict exact matching for the government warning.
+- **Streaming results** — applications process concurrently and results stream back per-item, filling a color-coded table (green / amber / red per field) as each finishes. A summary strip tallies passed / needs-review / failed.
+- **Result detail** — clicking any result expands a per-field breakdown showing the extracted value and the specific reason for any flag.
+- **Searchable history** — every verdict is persisted. A search screen filters past reviews by serial number, brand (partial), outcome, product type, and date range, with pagination and on-demand detail.
+- **Two-screen navigation** — a top nav links the Verify and Review History screens.
+
+---
+
+## Using the app (for reviewing agents)
+
+The app has two screens, linked by the top navigation: **Verify** (review new applications) and **Review History** (search past results).
+
+### Verifying applications
+
+1. **Upload.** On the Verify screen, drag application PDFs onto the upload area, or click it to browse. You can add one file or many at once. Each PDF should be a complete application — the COLA form with the label affixed.
+
+2. **Check the pre-flight flags.** Each file appears in a list with two small chips, **Form** and **Label**, showing what was found inside it:
+    - **Green** — found clearly. The row is marked *Ready*.
+    - **Amber** — found, but the app isn't fully sure (e.g. a scanned form with no text layer).
+    - A row marked **Needs review** shows the reason underneath and a **Process anyway** button. Use it when you've looked and the document is fine; the app won't process a flagged document until you do.
+    - Remove any file with the **×** on its row, or **Clear all** to start over.
+
+3. **Process.** Once at least one file is *Ready*, the large **Process** button is enabled and shows how many it will run. Click it. A progress bar shows results arriving ("Processing… 3 of 12 done") — you don't have to wait for the whole batch before reading the early ones.
+
+4. **Read the results table.** Each application becomes a row. Every field has a colored verdict:
+    - **Green — Pass**: the label matches the application (or meets the requirement).
+    - **Amber — Review / Unreadable**: close but not exact, or couldn't be read confidently. Worth a human look.
+    - **Red — Fail**: a genuine mismatch or a missing required field.
+    - **Gray — N/A**: not applicable to this product type (e.g. wine appellation on a spirit).
+      The **Overall** column summarizes the row, and the strip above the table tallies how many passed, need review, or failed.
+
+5. **See why.** Click any row to expand a per-field breakdown showing the value the app read from the label and, for anything flagged, the specific reason (e.g. *"GOVERNMENT WARNING:" must be in all capital letters*). The verdict is guidance — you make the final call.
+
+### Searching past reviews
+
+On the **Review History** screen, the most recent reviews load automatically. Narrow them with any combination of filters — serial number, brand (partial text is fine), outcome, product type, and a date range — then click **Search**. Results paginate; click any row to expand the same per-field detail you saw at verification time. **Clear filters** returns to the full recent list.
+
+### Good to know
+
+- **Amber means "look," not "rejected."** The app flags uncertainty rather than deciding for you. Anything amber or red is surfaced so a person can judge it.
+- **The government warning is checked strictly** — exact wording and an all-caps header. Small deviations that would be fine elsewhere will fail here, by design.
+- **Brand and producer names are matched leniently** — differences in capitalization, punctuation, or spacing won't be treated as a mismatch.
+
+---
+
+## Architecture
+
+### Request flow (one application)
+
+```
+Upload (combined PDF)
+   │
+   ▼
+[1] Detect regions      structural check: filled Part I? affixed label?
+   │                    (cheap, no model call; flags ambiguous docs)
+   ▼
+[2] Slice form page 1   form Part I taken from page 1 only — model never
+   │                    sees instruction / certification / revision pages
+   ▼
+[3] Extract (×2)        one shared model integration, two prompts:
+   │   ├─ form parser   → Part I values  ("what it should be")
+   │   └─ label parser  → label fields   ("what's printed")
+   ▼
+[4] Match               deterministic matchers compare the two sides;
+   │                    confidence-gated so a misread never becomes a
+   ▼                    false fail
+[5] Persist             verdict + field results saved (Postgres);
+   │                    uploaded files are NOT stored
+   ▼
+[6] Stream              result returned per-item; table fills row by row
+```
+
+### Layers
+
+**Frontend (Next.js App Router, React, Tailwind).** Two screens — `/` (Verify) and `/search` (Review History) — composed from small components. Shared display constants and the `OverallBadge` / `FieldCards` components are imported by both screens so verdicts look identical everywhere. Client-side region detection runs before upload; processing is driven by a streaming `fetch` to the API.
+
+**API routes (Node runtime).**
+- `POST /api/verify` — accepts the uploaded PDFs as multipart form data, runs the batch, and streams results back as newline-delimited JSON (NDJSON), one line per finished application.
+- `GET /api/search` — queries stored verdicts with combinable filters and pagination.
+- `GET /api/results/[id]` — fetches one full result (summary + all field rows) for the detail view.
+
+**Core library (`lib/`).** Framework-independent and unit-testable:
+- `schema.ts` — types, the field→matcher rule config, product-type rulesets, the canonical warning text.
+- `prompts.ts` — the label and form extraction prompts.
+- `pdf-first-page.ts` — slices the form to page 1 (hard guard against extra pages).
+- `detect-regions.ts` — structural region detection (server-side).
+- `extraction.ts` — one shared vision-model integration; model is a per-call parameter.
+- `parsers.ts` — the label and form parsers (prompt + validator pairs).
+- `matching.ts` — the three matchers + the dispatcher.
+- `orchestration.ts` — concurrency-capped batch processing with per-item streaming.
+- `persistence.ts` — schema migration, save, search, and fetch (Vercel Postgres).
+
+### Key design decisions
+
+**One vision model, not OCR-then-parse.** A multimodal model extracts and structures in one call, tolerates imperfect photos better than classical OCR, and stays within a per-label latency budget.
+
+**The model transcribes; code judges.** All compliance logic lives in deterministic, unit-tested matchers. The model is never asked whether something passes — only what the label says. This makes verdicts trustworthy and is what enables the tolerant/strict split.
+
+**Three matchers, routed by config.**
+- *Tolerant* (brand, producer, class/type) — normalizes case, punctuation, accents, whitespace, then scores similarity. Exact-after-normalization passes; a near match is flagged for review; a real difference fails. This is what lets "STONE'S THROW" match "Stone's Throw" without manual judgment.
+- *Numeric* (alcohol content, net contents) — parses value and unit and compares within a tolerance, so "750 mL" equals "0.75 L".
+- *Strict* (government warning) — exact comparison against the mandated 27 CFR 16.21 text, including the all-caps header requirement; only line-wrapping whitespace is tolerated.
+
+**Confidence-gated matching.** Because both sides are model-read, a mismatch could be a real mismatch or a misread. If either side was read with low confidence, the field resolves to "unreadable" (review) rather than a confident fail. The government warning is the deliberate exception: a missing or altered warning fails regardless of read confidence.
+
+**Combined PDF, two regions.** Form and label arrive as one document, so there is no file-pairing problem; the app instead verifies both regions are present before processing.
+
+**Streaming over batch-blocking.** The 5-second expectation is per-label, not per-batch. A worker pool keeps a bounded number of applications in flight and streams each result as it lands, so the table fills progressively and one slow item never holds up the rest.
+
+**Same schema, swappable engine.** The relational schema is the durable artifact. It runs on Vercel Postgres here; the schema ports to any Postgres for production.
+
+---
+
+## Tech stack
+
+- **Next.js (TypeScript)** — full-stack framework; App Router; API routes keep the model key server-side.
+- **React + Tailwind CSS** — UI.
+- **Anthropic vision model** — extraction (one integration for both parsers).
+- **pdf-lib** — page slicing and structural region detection.
+- **PostgreSQL via `pg`** — persistence and search; runs against any Postgres (managed, on-prem, or local Docker).
+- **Docker** — containerized deploy to any host.
+- **fastest-levenshtein** — string distance for the tolerant matcher.
+- **Vitest** — the matching-core test suite.
+- **lucide-react** — icons.
+
+---
+
+## Setup
+
+### Prerequisites
+- Docker (for the one-command local path), **or** Node.js 20+ and a PostgreSQL database
+- An Anthropic API key
+
+### Local deployment — Option A: Docker Compose (recommended)
+Runs the app and a Postgres database together with one command.
+```bash
+# from the project root
+export ANTHROPIC_API_KEY=sk-ant-...        # or put it in a .env file beside docker-compose.yml
+docker compose up --build
+```
+- App: http://localhost:3000
+- Postgres: localhost:5432 (created automatically, data persisted in a Docker volume)
+- The database schema is created on the first request — no migration step.
+- Stop with `Ctrl+C`; tear down completely (including data) with `docker compose down -v`.
+
+### Local deployment — Option B: Node directly
+Use this if you'd rather run the app on your host. You need a Postgres to point at; the quickest is a throwaway container:
+```bash
+# 1. start a local Postgres (skip if you already have one)
+docker run -d --name labels-db -p 5432:5432 \
+  -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=labels \
+  postgres:16-alpine
+
+# 2. configure environment
+cat > .env.local <<'EOF'
+ANTHROPIC_API_KEY=sk-ant-...
+DATABASE_URL=postgres://app:app@localhost:5432/labels
+EOF
+
+# 3. install and run
+npm install
+npm run dev          # http://localhost:3000
+
+# (optional) run the test suite
+npm test
+```
+
+### Environment variables
+```
+ANTHROPIC_API_KEY=sk-ant-...                            # required; never commit
+DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
+PGSSLMODE=require        # only if your Postgres requires TLS (managed providers)
+MODEL=claude-...         # optional model override (default in lib/config.ts)
+BATCH_CONCURRENCY=6      # optional concurrency override
+```
+`.env.local` is gitignored and read only in local development.
+
+### Before first run
+- Set the model via `MODEL` or the default in `lib/config.ts`.
+- Verify the installed `@anthropic-ai/sdk` and `pg` versions match the call shapes in `lib/extraction.ts` and `lib/db.ts`.
+
+### Deploy to any server
+Build the container and run it anywhere — a cloud VM, a container platform, or on-prem:
+```bash
+docker build -t label-verification .
+docker run -p 3000:3000 \
+  -e DATABASE_URL=postgres://user:pass@host:5432/dbname \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  label-verification
+```
+The schema is created on the first request (idempotent migration). If a reverse proxy sits in front, disable response buffering so the verify route can stream results incrementally (the route sets `X-Accel-Buffering: no` for nginx).
+
+---
+
+## Assumptions
+
+- Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
+- The canonical government-warning text used for the strict check is the standard 27 CFR 16.21 wording. **Verify this string against the current regulation before any real use** — the strict matcher is only as correct as that constant.
+- Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default is used, but in production this should gate to human confirmation, since it controls the whole comparison profile.
+- The reviewing agent makes the final call. Every "review" outcome and detection flag is an invitation for human judgment, not an automated rejection.
+
+---
+
+## Limitations and trade-offs
+
+- **Bold detection is approximate.** The warning header's bold requirement is judged visually by the model, which is less reliable than reading text. A bold-only doubt is downgraded to review rather than a hard fail.
+- **Correlated misreads can produce a false pass.** On fields matched between the label and the form (brand, producer, appellation), both sides are read by the model. If it misreads the *same* text the *same* wrong way on both — and does so confidently — the two corrupted values match each other and the field passes, hiding a real discrepancy. The cause is the similarity of the inputs, not the use of one model; two different models can share the same blind spots. This is mitigated, not eliminated, by the confidence gate (an ambiguous read usually returns low confidence and routes to review), and it cannot affect the government warning, which is matched against a fixed constant rather than a second model read. Hardening options for production: extract high-stakes fields at two resolutions/crops and require agreement, cross-check derivable relationships (e.g. proof = ABV × 2), or always surface the extracted values to the agent on a pass, not only on a flag.
+- **Net-contents parsing is not exhaustive.** Common units (mL, cL, L, fl oz) are handled; compound US statements like "1 PINT 9 FL OZ" are not yet parsed and would flag for review.
+- **Detection is heuristic.** Region detection uses structural signals (template markers, embedded images), not full extraction. A form flattened into a single image has no text layer and is treated as low-confidence rather than assumed valid. Production would use a dedicated text extractor for higher reliability.
+- **Cloud model vs. network policy.** The prototype calls a hosted model API. In a restricted federal network this traffic may be blocked; production deployment would need the endpoint allow-listed or an in-network model. This is the single most likely thing to break a real deployment.
+- **ZIP archives are not expanded in the browser build.** Bulk ZIP support is a server-side addition; the current build asks the user to extract PDFs first.
+- **Long batches need a streaming-friendly proxy.** Processing runs in one streaming request. A long-running Node server has no function timeout, so large batches complete fine — but any reverse proxy in front must have response buffering disabled (the route sets `X-Accel-Buffering: no` for nginx) or results won't stream incrementally.
+- **No COLA integration.** By design. Results inform a potential future workflow; they are not written back to any system of record.
+
+### Data and retention
+
+The prototype stores extracted text and verdicts only. Uploaded PDFs and label images are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. A production system would need an explicit retention policy and the corresponding federal compliance review.
