@@ -9,15 +9,20 @@ export function SearchResultRow({ row }: { row: Summary }) {
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<any | null>(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
+    const [detailError, setDetailError] = useState<string | null>(null);
 
     const toggle = async () => {
         const next = !open;
         setOpen(next);
         if (next && !detail) {
             setLoadingDetail(true);
+            setDetailError(null);
             try {
                 const res = await fetch(`/api/results/${encodeURIComponent(row.id)}`);
-                if (res.ok) setDetail(await res.json());
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+                setDetail(await res.json());
+            } catch (e) {
+                setDetailError(e instanceof Error ? e.message : "Failed to load details.");
             } finally { setLoadingDetail(false); }
         }
     };
@@ -36,6 +41,8 @@ export function SearchResultRow({ row }: { row: Summary }) {
                     <td colSpan={5} className="border-b border-slate-200 bg-slate-50 p-0">
                         {loadingDetail ? (
                             <div className="flex items-center gap-2 px-4 py-5 text-sm text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading details…</div>
+                        ) : detailError ? (
+                            <div className="flex items-center gap-2 px-4 py-5 text-sm text-red-500"><FileText size={16} /> {detailError}</div>
                         ) : detail ? (
                             <FieldCards fields={detail.fields} />
                         ) : (

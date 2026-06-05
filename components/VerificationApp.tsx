@@ -69,10 +69,12 @@ export default function VerificationApp() {
                 while ((nl = buf.indexOf("\n")) >= 0) {
                     const line = buf.slice(0, nl).trim();
                     buf = buf.slice(nl + 1);
-                    if (line) handleStreamLine(JSON.parse(line));
+                    if (line) try { handleStreamLine(JSON.parse(line)); }
+                        catch { console.error("Malformed NDJSON line:", line); }
                 }
             }
-            if (buf.trim()) handleStreamLine(JSON.parse(buf.trim()));
+            if (buf.trim()) try { handleStreamLine(JSON.parse(buf.trim())); }
+                catch { console.error("Malformed NDJSON trailing data:", buf.trim()); }
         } catch (e) {
             setProcessError(e instanceof Error ? e.message : "Processing failed.");
             setItems((prev) => prev.map((x) => x.status === "processing" ? { ...x, status: "queued" } : x));

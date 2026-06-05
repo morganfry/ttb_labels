@@ -12,6 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         if (!result) return Response.json({ error: "Not found." }, { status: 404 });
         return Response.json(result);
     } catch (e) {
+        console.error("Result lookup error:", e);
         return Response.json({ error: e instanceof Error ? e.message : "Lookup failed." }, { status: 500 });
     }
 }

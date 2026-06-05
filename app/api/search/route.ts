@@ -25,7 +25,7 @@ export async function GET(req: Request): Promise<Response> {
     };
 
     try { return Response.json(await search(q)); }
-    catch (e) { return Response.json({ error: e instanceof Error ? e.message : "Search failed." }, { status: 500 }); }
+    catch (e) { console.error("Search error:", e); return Response.json({ error: e instanceof Error ? e.message : "Search failed." }, { status: 500 }); }
 }
 
 /** Parse a non-negative integer query param, falling back on anything invalid. */
