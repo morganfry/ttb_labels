@@ -67,7 +67,7 @@ export const SCENARIOS: Scenario[] = [
     {
         name: "brand near-match routes to review",
         label: { ...clone(cleanLabel), brandName: f("Stone's Throw Distillery") },
-        form: { ...clone(cleanForm), brandName: ff("Stone's Throw Distillers") },
+        form: { ...clone(cleanForm), brandName: ff("Stones Throw Distilery") },
         expectedOverall: "needsReview",
     },
     {

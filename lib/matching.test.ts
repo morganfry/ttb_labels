@@ -64,7 +64,7 @@ describe("brand name matching", () => {
         expect(statusOf(baseLabel({ brandName: fld("STONE'S THROW") }), baseApp({ brandName: "Stone's Throw" }), "brandName").status).toBe("pass");
     });
     it("near-match is review", () => {
-        expect(statusOf(baseLabel({ brandName: fld("Stone's Throw Distillery") }), baseApp({ brandName: "Stone's Throw Distillers" }), "brandName").status).toBe("review");
+        expect(statusOf(baseLabel({ brandName: fld("Stone's Throw Distillery") }), baseApp({ brandName: "Stones Throw Distilery" }), "brandName").status).toBe("review");
     });
     it("genuine mismatch fails", () => {
         expect(statusOf(baseLabel({ brandName: fld("Eagle Rare") }), baseApp({ brandName: "Old Tom Distillery" }), "brandName").status).toBe("fail");
