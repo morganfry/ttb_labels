@@ -25,8 +25,8 @@ README.md; for file locations see the architecture section there.
   (imageFetch.ts), not a second code path.
 - **Three homes for constants, kept separate on purpose:**
     - Domain rules (matcher thresholds, tolerances, the warning text) → schema.ts
-    - Operational knobs (model, maxTokens, concurrency, pageSize, the CSV
-      csvImage*/csvMaxImagesPerRow caps) → config.ts
+    - Operational knobs (model/labelModel/formModel, maxTokens, concurrency,
+      pageSize, the CSV csvImage*/csvMaxImagesPerRow caps) → config.ts
     - Secrets (ANTHROPIC_API_KEY) → process.env only, never a committed file
       Don't consolidate these; the split is deliberate.
 - **Tailwind color classes must be full literal strings** (see STATUS_META /
@@ -36,6 +36,16 @@ README.md; for file locations see the architecture section there.
   persistWrite.ts / persistQuery.ts directly. Keeps the public surface stable.
 - **Page 1 only reaches the form parser** (extractFirstPage). The form prompt's
   scope guard is the backup; the slice is the real guarantee. Don't remove either.
+- **Only artwork pages reach the label parser** (extractLabelArtwork) — the
+  image-bearing pages, not the whole document, to cut vision latency. It is
+  deliberately conservative: it never drops a page that has an image, and falls
+  back to the whole PDF when none are detected (or every page has one). It must
+  never break the label read — keep the internal try/catch + whole-PDF fallback.
+- **Label and form can run on different models** (config.labelModel /
+  config.formModel; LABEL_MODEL / FORM_MODEL env). The label is verbatim
+  transcription, so it defaults to a faster/cheaper tier; the form stays on the
+  general model. processOne resolves per-side: opts.labelModel ?? opts.model ??
+  config.labelModel (same shape for the form, and for the CSV label read).
 
 ## Confidence gate (the subtle bit in matching.ts)
 Both sides of a comparison are model-read, so a "mismatch" may be a misread.
@@ -66,8 +76,9 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   client pre-flights them in the preview before the run.)
 
 ## Verify before trusting (things that may be stale)
-- DEFAULT_MODEL / config.model is a placeholder — confirm it's a current,
-  valid model id.
+- config.model / config.labelModel / config.formModel are placeholders —
+  confirm all three are current, valid model ids (label defaults to a Haiku
+  tier; verify it's accurate enough for the label read on real samples).
 - Confirm installed @anthropic-ai/sdk matches the messages.create shape in
   extraction.ts, and pg matches the Pool/query shape in db.ts.
 - TTB_GOVERNMENT_WARNING (schema.ts) must match current 27 CFR 16.21 — the
@@ -141,9 +152,10 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Architecture
 
-Request flow (one PDF application): detect regions → slice form to page 1 →
-extract label + form (two prompts, one shared model) → deterministic,
-confidence-gated matching → persist (text + verdicts only) → stream result.
+Request flow (one PDF application): detect regions → slice form to page 1 and
+label to its artwork pages → extract label + form concurrently (two prompts,
+one shared integration, per-side model tiers) → deterministic, confidence-gated
+matching → persist (text + verdicts only) → stream result.
 CSV path: same pipeline with the front swapped — application data from columns,
 label images fetched from URLs and transcribed; matching onward is identical
 and shares the same worker pool.
@@ -209,7 +221,9 @@ npm test             # optional: matching-core suite
 ANTHROPIC_API_KEY=sk-ant-...                            # required; never commit
 DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
 PGSSLMODE=require        # only if your Postgres requires TLS
-MODEL=claude-...         # optional model override (default in lib/config.ts)
+MODEL=claude-...         # optional; general/default model (default in lib/config.ts)
+LABEL_MODEL=claude-...   # optional; label read (default: faster tier, claude-haiku-4-5)
+FORM_MODEL=claude-...    # optional; form read (default: MODEL / claude-sonnet-4-6)
 BATCH_CONCURRENCY=6      # optional concurrency override
 CSV_IMAGE_MAX_BYTES=12582912      # optional; per-image size cap for CSV fetches
 CSV_IMAGE_FETCH_TIMEOUT_MS=15000  # optional; per-image fetch timeout (CSV path)

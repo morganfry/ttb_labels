@@ -8,8 +8,20 @@ function intFromEnv(name: string, fallback: number): number {
     return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+const MODEL = process.env.MODEL ?? "claude-sonnet-4-6";
+
 export const config = {
-    model: process.env.MODEL ?? "claude-sonnet-4-6",
+    /** General/default model (also the form parser's default). */
+    model: MODEL,
+    /**
+     * Per-side model overrides. The label is verbatim transcription, which a
+     * faster/cheaper tier handles well, so it defaults to Haiku; the form parser
+     * stays on the general model. Both honor MODEL as a fallback and can be
+     * pinned independently via LABEL_MODEL / FORM_MODEL. Confirm these are
+     * current, valid model ids before real use.
+     */
+    labelModel: process.env.LABEL_MODEL ?? "claude-haiku-4-5",
+    formModel: process.env.FORM_MODEL ?? MODEL,
     maxTokens: 8192,
     maxRetries: 2,
     retryBaseMs: 500,

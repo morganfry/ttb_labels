@@ -15,6 +15,7 @@ import { resolveLabelImages, ImageFetchError } from "./imageFetch";
 import { parseLabel } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError } from "./extraction";
+import { config } from "./config";
 import type { ApplicationData, Confidence, VerificationResult } from "./schema";
 import type { ZipImageIndex } from "./zipImages";
 
@@ -31,7 +32,9 @@ export interface CsvWorkItem {
 
 export interface CsvBatchOptions extends PoolOptions {
     persist?: (result: VerificationResult) => Promise<void>;
+    /** Global model override; the label read defaults to config.labelModel. */
     model?: string;
+    labelModel?: string;
     /** Injection seam for tests; defaults to the real model-backed parser. */
     parseLabel?: typeof parseLabel;
     /** Injection seam for tests; defaults to the real URL/ZIP resolver. */
@@ -75,7 +78,7 @@ async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<
 
     let labelRes;
     try {
-        labelRes = await label(inputs, opts.model);
+        labelRes = await label(inputs, opts.labelModel ?? opts.model ?? config.labelModel);
     } catch (e) {
         return fail(classifyExtraction(e));
     }

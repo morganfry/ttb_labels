@@ -7,7 +7,7 @@
  * and importers submit 200-300 at once (so a concurrency cap prevents
  * opening hundreds of simultaneous model calls).
  */
-import { extractFirstPage, toBase64 } from "./pdfFirstPage";
+import { extractFirstPage, extractLabelArtwork, toBase64 } from "./pdfFirstPage";
 import { parseLabel, parseForm, type FormExtraction } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError } from "./extraction";
@@ -46,7 +46,11 @@ export interface BatchOptions {
     persist?: (result: VerificationResult) => Promise<void>;
     /** Cancels the batch (e.g. client disconnect). */
     signal?: AbortSignal;
+    /** Global model override applied to both sides unless a per-side one is set. */
     model?: string;
+    /** Per-side model overrides (default to config.labelModel / config.formModel). */
+    labelModel?: string;
+    formModel?: string;
     /**
      * Parser injection seam. Defaults to the real model-backed parsers; tests
      * override these with fixtures to exercise the pipeline deterministically
@@ -141,13 +145,20 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     try { formBytes = (await extractFirstPage(item.formPdf)).bytes; }
     catch (e) { return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false }); }
 
+    // Send the label parser only the artwork pages, not the whole document —
+    // fewer image tokens, lower latency. Never throws; falls back to the whole PDF.
+    const labelBytes = (await extractLabelArtwork(item.labelPdf)).bytes;
+
     // Parsers are injectable (default: real model-backed). Label and form are
-    // independent calls — run concurrently to roughly halve per-item latency.
+    // independent calls — run concurrently to roughly halve per-item latency,
+    // each on its own model (label defaults to a faster tier; see config).
     const label = opts.parsers?.parseLabel ?? parseLabel;
     const form = opts.parsers?.parseForm ?? parseForm;
+    const labelModel = opts.labelModel ?? opts.model ?? config.labelModel;
+    const formModel = opts.formModel ?? opts.model ?? config.formModel;
     const [labelRes, formRes] = await Promise.allSettled([
-        label({ base64: toBase64(item.labelPdf), mediaType: "application/pdf" }, opts.model),
-        form({ base64: toBase64(formBytes), mediaType: "application/pdf" }, opts.model),
+        label({ base64: toBase64(labelBytes), mediaType: "application/pdf" }, labelModel),
+        form({ base64: toBase64(formBytes), mediaType: "application/pdf" }, formModel),
     ]);
 
     if (labelRes.status === "rejected") return fail(classifyExtraction(labelRes.reason, "label"));

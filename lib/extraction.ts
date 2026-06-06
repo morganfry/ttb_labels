@@ -7,9 +7,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config";
 
-/** @deprecated prefer `config.model`; retained for back-compat with callers. */
-export const DEFAULT_MODEL = config.model;
-
 /* API key is read from the environment, never passed by callers and never
  * placed in a committed config file — it is a secret. */
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

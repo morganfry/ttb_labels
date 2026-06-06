@@ -81,10 +81,12 @@ Upload (combined PDF)
 [1] Detect regions      structural check: filled Part I? affixed label?
    │                    (cheap, no model call; flags ambiguous docs)
    ▼
-[2] Slice form page 1   form Part I taken from page 1 only — model never
-   │                    sees instruction / certification / revision pages
+[2] Slice                form Part I → page 1 only (model never sees the
+   │                     instruction / certification / revision pages);
+   │                     label → only the artwork (image-bearing) pages
    ▼
-[3] Extract (×2)        one shared model integration, two prompts:
+[3] Extract (×2)         one shared model integration, two prompts, run
+   │                     concurrently, each on its own model tier:
    │   ├─ form parser   → Part I values  ("what it should be")
    │   └─ label parser  → label fields   ("what's printed")
    ▼
@@ -206,7 +208,9 @@ npm test
 ANTHROPIC_API_KEY=sk-ant-...                            # required; never commit
 DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
 PGSSLMODE=require        # only if your Postgres requires TLS (managed providers)
-MODEL=claude-...         # optional model override (default in lib/config.ts)
+MODEL=claude-...         # optional; general/default model (default in lib/config.ts)
+LABEL_MODEL=claude-...   # optional; model for the label read (default: a faster tier, claude-haiku-4-5)
+FORM_MODEL=claude-...    # optional; model for the form read (default: MODEL / claude-sonnet-4-6)
 BATCH_CONCURRENCY=6      # optional concurrency override
 CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for CSV labels (URL or ZIP; default 12 MiB)
 CSV_IMAGE_FETCH_TIMEOUT_MS=15000 # optional; per-image fetch timeout for the CSV URL path
