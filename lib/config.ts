@@ -9,10 +9,11 @@ function intFromEnv(name: string, fallback: number): number {
 }
 
 export const config = {
-    model: process.env.MODEL ?? "claude-sonnet-4-5",
-    maxTokens: 1500,
+    model: process.env.MODEL ?? "claude-sonnet-4-6",
+    maxTokens: 8192,
     maxRetries: 2,
     retryBaseMs: 500,
     concurrency: intFromEnv("BATCH_CONCURRENCY", 6),
     pageSize: 25,
+    temperature: 0,
 } as const;

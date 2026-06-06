@@ -1,7 +1,7 @@
 /* Extraction prompts for the two parsers. Exported as template strings so
  * lib/parsers.ts can import them. */
 
-export const LABEL_PROMPT = `You transcribe alcohol beverage labels for TTB compliance review. You are given one label image. Transcribe what is printed into JSON. You only transcribe — a separate system judges compliance.
+export const LABEL_PROMPT = `You transcribe alcohol beverage labels for TTB compliance review. You are given a PDF that may contain one or more label images (front, back, neck strip, etc.) for a single product. Examine all label images and transcribe the combined set of fields into one JSON object. If the same field appears on more than one label, use the most legible and complete version. You only transcribe — a separate system judges compliance.
 
 Rules:
 1. Verbatim: copy text exactly as printed (same case, punctuation, abbreviations). Never expand, correct, or normalize — e.g. keep "750 mL" as-is, keep "STONE'S" as-is.
