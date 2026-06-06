@@ -14,9 +14,16 @@ README.md; for file locations see the architecture section there.
 - **The model transcribes; deterministic code judges.** Extraction prompts
   return verbatim field values only. ALL compliance decisions live in
   lib/matching.ts. Never move pass/fail logic into a prompt.
+- **Two ingestion paths, one judge.** PDF intake (orchestration.ts) and CSV
+  intake (csvOrchestration.ts) converge on the SAME label extraction, matchers,
+  persistence, and streaming. CSV replaces only the *form* read with explicit
+  columns; the label is still model-read from fetched image URLs. Both run
+  through `runPool` (orchestration.ts) — keep the worker pool shared, not forked.
+  Don't let the CSV path acquire its own matching or persistence logic.
 - **Three homes for constants, kept separate on purpose:**
     - Domain rules (matcher thresholds, tolerances, the warning text) → schema.ts
-    - Operational knobs (model, maxTokens, concurrency, pageSize) → config.ts
+    - Operational knobs (model, maxTokens, concurrency, pageSize, the CSV
+      csvImage*/csvMaxImagesPerRow caps) → config.ts
     - Secrets (ANTHROPIC_API_KEY) → process.env only, never a committed file
       Don't consolidate these; the split is deliberate.
 - **Tailwind color classes must be full literal strings** (see STATUS_META /
@@ -42,6 +49,11 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   limitations). Mitigated by the confidence gate, not eliminated.
 - parseVolumeMl handles mL/cL/L/fl oz only; compound US ("1 PINT 9 FL OZ")
   flags for review by design.
+- CSV image fetch (imageFetch.ts) has a BEST-EFFORT SSRF guard only (http(s)
+  only; loopback/link-local/RFC-1918 rejected) — not DNS-rebinding-proof.
+  Production needs an allow-list or egress proxy. Don't widen it silently.
+- CSV rows that fail validation become pre-failed work items (preError) so they
+  surface in the stream and summary instead of being dropped. Keep that.
 
 ## Verify before trusting (things that may be stale)
 - DEFAULT_MODEL / config.model is a placeholder — confirm it's a current,
@@ -54,8 +66,14 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
 ## Conventions when extending
 - New verifiable field → add to LabelExtraction + FIELD_RULES (+ a rule type
   if needed); the dispatcher routes it. Avoid bespoke per-field code paths.
+- CSV columns mirror ApplicationData; the canonical list + validation live in
+  csvParse.ts (CSV_COLUMNS). A new application field → add it there AND to the
+  UI guide (CsvVerify.tsx COLUMN_NOTES / SAMPLE_CSV), kept in sync.
+- parseLabel accepts one ExtractionInput or an array (multi-view labels); the
+  array is sent as multiple content blocks in ONE model call, not N calls.
 - New matcher → matching.ts; pure helpers → textNormalize.ts / unitParse.ts.
-- Pure logic stays framework-free in lib/ and gets a Vitest test.
+- Pure logic stays framework-free in lib/ and gets a Vitest test (csvParse.ts
+  is framework-free precisely so it can be reused on the client for preview).
 - Comment the WHY, not the what. TSDoc on exported/public surfaces.
 - Shared UI (badges, field cards, display constants) is imported by both
   screens — change once, not per-screen.
@@ -76,14 +94,21 @@ An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA,
 Form 5100.31). An agent uploads one or more combined application PDFs; the app
 extracts the label fields and the form's Part I data, checks them against TTB
 requirements, and returns a per-field pass / review / fail verdict in a
-searchable table.
+searchable table. Two intake modes: combined PDFs, or a CSV of application data
+with label-image URLs for bulk runs.
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
 ## Features
 
+- Two ingestion modes — a PDF upload tab and a CSV bulk tab on the Verify
+  screen, both feeding the same matching/persistence/results pipeline.
 - Upload — drag-and-drop or browse, single or bulk; combined application PDFs
   (a filled COLA form with the label artwork affixed).
+- CSV bulk — one application per row: COLA Part I fields as columns + a final
+  labelImageUrls column (JSON array of image URLs). The app fetches and reads
+  those images, then verifies against the row. The tab shows the format, an
+  example, and a downloadable template.
 - Pre-flight detection — each PDF is checked for a filled Part I and an affixed
   label before processing; ambiguous documents are flagged for review with an
   explicit "Process anyway" override.
@@ -100,19 +125,23 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Architecture
 
-Request flow (one application): detect regions → slice form to page 1 →
+Request flow (one PDF application): detect regions → slice form to page 1 →
 extract label + form (two prompts, one shared model) → deterministic,
 confidence-gated matching → persist (text + verdicts only) → stream result.
+CSV path: same pipeline with the front swapped — application data from columns,
+label images fetched from URLs and transcribed; matching onward is identical
+and shares the same worker pool.
 
 Layers:
-- Frontend (Next.js App Router, React, Tailwind) — Verify (`/`) and Review
-  History (`/search`), composed from small components; shared display
+- Frontend (Next.js App Router, React, Tailwind) — Verify (`/`, PDF + CSV tabs)
+  and Review History (`/search`), composed from small components; shared display
   constants and badges keep verdicts identical across screens.
-- API routes (Node runtime) — `POST /api/verify` (streams NDJSON),
-  `GET /api/search`, `GET /api/results/[id]`.
+- API routes (Node runtime) — `POST /api/verify` and `POST /api/verify-csv`
+  (both stream NDJSON), `GET /api/search`, `GET /api/results/[id]`.
 - Core library (`lib/`) — framework-independent and unit-testable: schema +
   rule config, prompts, page slicer, region detection, shared extraction,
-  parsers, matchers + dispatcher, batch orchestration, persistence (pg).
+  parsers, matchers + dispatcher, batch orchestration (runPool + PDF and CSV
+  per-item pipelines), CSV parse + image fetch, persistence (pg).
 
 Key decisions: one vision model rather than OCR-then-parse; the model
 transcribes while deterministic code judges; three matchers routed by config;
@@ -166,6 +195,9 @@ DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
 PGSSLMODE=require        # only if your Postgres requires TLS
 MODEL=claude-...         # optional model override (default in lib/config.ts)
 BATCH_CONCURRENCY=6      # optional concurrency override
+CSV_IMAGE_MAX_BYTES=12582912      # optional; per-image size cap for CSV fetches
+CSV_IMAGE_FETCH_TIMEOUT_MS=15000  # optional; per-image fetch timeout (CSV path)
+CSV_MAX_IMAGES_PER_ROW=6          # optional; max image URLs per CSV row
 ```
 `.env.local` is gitignored and read only in local development.
 
@@ -189,6 +221,8 @@ sets `X-Accel-Buffering: no` for nginx).
 ## Assumptions
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the
   affixed label artwork.
+- For CSV intake, each row's columns are authoritative Part I data (not re-read
+  from any document), and the listed image URLs are server-reachable label art.
 - The canonical warning text (27 CFR 16.21) must be verified against the current
   regulation before real use — the strict check is only as correct as that constant.
 - Product type (item 5) selects the validation ruleset; when unreadable it
@@ -210,11 +244,15 @@ sets `X-Accel-Buffering: no` for nginx).
   extraction; a flattened-image form is treated as low-confidence.
 - The model API is a cloud call; in a restricted network it may need
   allow-listing or an in-network model.
+- CSV image fetching is server-side with only a best-effort SSRF guard (http(s)
+  only; loopback/link-local/RFC-1918 rejected) + size/timeout caps; production
+  needs an allow-list or egress proxy.
 - ZIP archives are not expanded in the browser build.
 - Long batches need a streaming-friendly reverse proxy (buffering off).
 - No COLA integration, by design.
 
 ### Data and retention
-Only extracted text and verdicts are stored; uploaded PDFs/images are processed
-in memory and discarded. A production system would need an explicit retention
-policy and federal compliance review.
+Only extracted text and verdicts are stored; uploaded PDFs and label images
+(including images fetched from CSV URLs) are processed in memory and discarded;
+CSV image URLs are not persisted. A production system would need an explicit
+retention policy and federal compliance review.

@@ -97,14 +97,8 @@ export default function VerificationApp() {
     }, {});
 
     return (
-        <div className="min-h-screen bg-slate-50 px-4 py-8 font-sans text-slate-900">
-            <div className="mx-auto max-w-3xl">
-                <header className="mb-6">
-                    <h1 className="mb-1.5 text-3xl font-bold">Label Verification</h1>
-                    <p className="text-base text-slate-500">Upload label applications to check them against TTB requirements.</p>
-                </header>
-
-                <Dropzone onFiles={addFiles} />
+        <>
+            <Dropzone onFiles={addFiles} />
 
                 {items.length > 0 && (
                     <FileQueue items={items} pdfCount={pdfItems.length} disabled={processing}
@@ -156,7 +150,6 @@ export default function VerificationApp() {
                 )}
 
                 {hasResults && <ResultsTable items={pdfItems.filter((it) => it.result)} />}
-            </div>
-        </div>
+        </>
     );
 }

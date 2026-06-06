@@ -73,6 +73,33 @@ export interface BatchSummary {
  * others, unlike fixed-size batches that wait on their slowest member.
  */
 export async function processBatch(items: WorkItem[], opts: BatchOptions): Promise<BatchSummary> {
+    return runPool(items, (item) => processOne(item, opts), opts);
+}
+
+/** The streaming-aware part of {@link BatchOptions}, shared by every pool. */
+export interface PoolOptions {
+    concurrency?: number;
+    onResult: (outcome: ItemOutcome) => void;
+    onProgress?: (done: number, total: number) => void;
+    signal?: AbortSignal;
+}
+
+/**
+ * Generic bounded worker pool: run `process` over `items` with at most N in
+ * flight, streaming each {@link ItemOutcome} as it lands and returning the
+ * aggregate summary. The PDF and CSV paths differ only in `process`; the
+ * concurrency model, cancellation, and tallying live here once.
+ *
+ * Concurrency model: N persistent workers pull from a shared cursor rather
+ * than chunking the queue. This keeps exactly N in flight at all times — when
+ * one finishes it grabs the next — so a single slow item never stalls the
+ * others, unlike fixed-size batches that wait on their slowest member.
+ */
+export async function runPool<T>(
+    items: T[],
+    process: (item: T) => Promise<ItemOutcome>,
+    opts: PoolOptions,
+): Promise<BatchSummary> {
     const concurrency = Math.max(1, Math.min(opts.concurrency ?? config.concurrency, 12));
     const total = items.length;
     const start = Date.now();
@@ -85,7 +112,7 @@ export async function processBatch(items: WorkItem[], opts: BatchOptions): Promi
             if (opts.signal?.aborted) return;
             const index = cursor++;
             if (index >= items.length) return;
-            const outcome = await processOne(items[index], opts);
+            const outcome = await process(items[index]);
             if (outcome.ok) { summary.succeeded++; summary[outcome.result.overall]++; }
             else summary.failed++;
             opts.onResult(outcome); // stream out now — UI updates this row immediately

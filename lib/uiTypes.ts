@@ -8,7 +8,7 @@ export type Detection = {
 };
 
 export type Item = {
-    id: string; name: string; kind: "pdf" | "zip"; fromZip: string | null;
+    id: string; name: string; kind: "pdf" | "zip" | "csv"; fromZip: string | null;
     status: string; result: any; error?: any; file?: File; detection?: Detection | null;
 };
 

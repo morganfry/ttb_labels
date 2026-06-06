@@ -26,8 +26,9 @@ export interface FormExtraction {
     wineAppellation: FormField;
 }
 
-/** Extract label fields from a label image/PDF. */
-export function parseLabel(input: ExtractionInput, model?: string): Promise<ExtractionResult<LabelExtraction>> {
+/** Extract label fields from a label image/PDF. Pass an array of inputs to
+ *  transcribe several views (front/back/neck) of one label in a single call. */
+export function parseLabel(input: ExtractionInput | ExtractionInput[], model?: string): Promise<ExtractionResult<LabelExtraction>> {
     return extract<LabelExtraction>({ input, systemPrompt: LABEL_PROMPT, model, validate: validateLabel });
 }
 

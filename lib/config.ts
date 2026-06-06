@@ -16,4 +16,9 @@ export const config = {
     concurrency: intFromEnv("BATCH_CONCURRENCY", 6),
     pageSize: 25,
     temperature: 0,
+    /* CSV bulk path: label images are fetched from the URLs supplied per row.
+     * These bound that fetch so one bad row can't stall or balloon a batch. */
+    csvImageMaxBytes: intFromEnv("CSV_IMAGE_MAX_BYTES", 12 * 1024 * 1024),
+    csvImageFetchTimeoutMs: intFromEnv("CSV_IMAGE_FETCH_TIMEOUT_MS", 15000),
+    csvMaxImagesPerRow: intFromEnv("CSV_MAX_IMAGES_PER_ROW", 6),
 } as const;

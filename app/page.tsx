@@ -1,5 +1,5 @@
-import VerificationApp from "@/components/VerificationApp";
+import HomeTabs from "@/components/HomeTabs";
 
 export default function Page() {
-    return <VerificationApp />;
+    return <HomeTabs />;
 }

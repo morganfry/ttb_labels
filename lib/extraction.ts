@@ -53,7 +53,13 @@ export interface ExtractionResult<T> {
 }
 
 export interface ExtractOptions<T> {
-    input: ExtractionInput;
+    /**
+     * One source, or several to transcribe together as a single subject — e.g.
+     * the front and back images of one label. Multiple sources are sent as
+     * multiple content blocks in one model call, not separate calls, so the
+     * model reconciles them into one structured answer.
+     */
+    input: ExtractionInput | ExtractionInput[];
     systemPrompt: string;
     /**
      * Validates and narrows the parsed JSON to T. Return null (or throw) to
@@ -98,7 +104,15 @@ export async function extract<T>(opts: ExtractOptions<T>): Promise<ExtractionRes
  * mismatch won't improve by re-asking identically, so those fail fast rather
  * than burning latency against the per-label budget.
  */
-async function callModelWithRetry(input: ExtractionInput, systemPrompt: string, model: string): Promise<string> {
+async function callModelWithRetry(input: ExtractionInput | ExtractionInput[], systemPrompt: string, model: string): Promise<string> {
+    const inputs = Array.isArray(input) ? input : [input];
+    // Each source becomes its own content block; a leading note tells the model
+    // that several sources describe one subject so it merges rather than picks.
+    const sourceBlocks = inputs.map(buildSourceBlock);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lead: any[] = inputs.length > 1
+        ? [{ type: "text", text: `The following ${inputs.length} images are different views (e.g. front, back, neck) of a SINGLE label. Transcribe each field once, drawing from whichever view shows it.` }]
+        : [];
     let lastErr: unknown;
     for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
         try {
@@ -109,7 +123,8 @@ async function callModelWithRetry(input: ExtractionInput, systemPrompt: string, 
                 messages: [{
                     role: "user",
                     content: [
-                        buildSourceBlock(input),
+                        ...lead,
+                        ...sourceBlocks,
                         { type: "text", text: "Transcribe per your instructions. Output JSON only." },
                     ],
                 }],
