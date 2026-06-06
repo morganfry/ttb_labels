@@ -63,7 +63,7 @@ function validateLabel(parsed: unknown): LabelExtraction | null {
     const p = parsed as Record<string, unknown>;
     const fieldKeys: (keyof LabelExtraction)[] = [
         "brandName", "fancifulName", "classType", "alcoholContent", "netContents",
-        "producerNameAddress", "countryOfOrigin", "wineAppellation", "governmentWarning",
+        "producerNameAddress", "countryOfOrigin", "wineAppellation", "sulfitesDeclaration", "governmentWarning",
     ];
     for (const k of fieldKeys) if (!isField(p[k])) return null;
     const wf = p.warningFormatting as Record<string, unknown> | undefined;

@@ -20,7 +20,7 @@ const COLUMN_NOTES: Record<string, string> = {
     brandName: "Required. COLA item 6.",
     fancifulName: "Optional. COLA item 7.",
     applicantNameAddress: "Required. COLA item 8 — name + address.",
-    grapeVarietals: "Optional, wine only. COLA item 10.",
+    grapeVarietals: "Optional, wine only. COLA item 10. If set, an appellation becomes required on the label.",
     wineAppellation: "Optional, wine only. COLA item 11.",
     [IMAGE_URLS_COLUMN]: "Required. JSON array of label image URLs, e.g. [\"https://…/front.jpg\",\"https://…/back.jpg\"]. Multiple URLs are treated as views of one label.",
 };

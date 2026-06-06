@@ -35,6 +35,7 @@ const cleanLabel: LabelExtraction = {
     producerNameAddress: f("Old Tom Distillery, Bardstown, KY"),
     countryOfOrigin: f(null),
     wineAppellation: f(null),
+    sulfitesDeclaration: f(null),
     governmentWarning: f(TTB_GOVERNMENT_WARNING),
     warningFormatting: { headerAllCaps: true, headerBold: true },
 };
@@ -101,6 +102,7 @@ export const SCENARIOS: Scenario[] = [
             classType: f("Cabernet Sauvignon"),
             alcoholContent: f("13.5% Alc./Vol."),
             wineAppellation: f("Napa Valley"),
+            sulfitesDeclaration: f("Contains Sulfites"),
         },
         form: {
             ...clone(cleanForm),

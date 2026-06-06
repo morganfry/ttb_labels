@@ -19,6 +19,7 @@ Output ONLY this JSON object — no preamble, no fences, no commentary. Each fie
   "producerNameAddress": { "value": _, "found": _, "confidence": _ },   (bottler/producer/importer name + address; join lines with ", ")
   "countryOfOrigin":     { "value": _, "found": _, "confidence": _ },   (e.g. "Product of Scotland"; often absent on domestic)
   "wineAppellation":     { "value": _, "found": _, "confidence": _ },   (wine only, e.g. "Napa Valley"; else absent)
+  "sulfitesDeclaration": { "value": _, "found": _, "confidence": _ },   (wine; sulfite statement, e.g. "Contains Sulfites"; else absent)
   "governmentWarning":   { "value": _, "found": _, "confidence": _ },   (full warning text exactly as printed)
   "warningFormatting":   { "headerAllCaps": _, "headerBold": _ }
 }

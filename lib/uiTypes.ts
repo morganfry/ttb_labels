@@ -20,12 +20,13 @@ export const FIELD_LABELS: Record<string, string> = {
     producerNameAddress: "Producer & address",
     countryOfOrigin: "Country of origin",
     wineAppellation: "Wine appellation",
+    sulfitesDeclaration: "Sulfite declaration",
     governmentWarning: "Government warning",
 };
 
 export const FIELD_ORDER = [
     "brandName", "classType", "alcoholContent", "netContents",
-    "producerNameAddress", "countryOfOrigin", "wineAppellation", "governmentWarning",
+    "producerNameAddress", "countryOfOrigin", "wineAppellation", "sulfitesDeclaration", "governmentWarning",
 ];
 
 type StatusMeta = { label: string; text: string; chipBg: string; chipText: string; Icon: ComponentType<any> | null };

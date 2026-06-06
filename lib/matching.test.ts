@@ -17,6 +17,7 @@ function baseLabel(over: Partial<LabelExtraction> = {}): LabelExtraction {
         producerNameAddress: fld("Old Tom Distillery, Bardstown, KY"),
         countryOfOrigin: fld(null),
         wineAppellation: fld(null),
+        sulfitesDeclaration: fld(null),
         governmentWarning: fld(TTB_GOVERNMENT_WARNING),
         warningFormatting: { headerAllCaps: true, headerBold: true },
         ...over,
@@ -121,6 +122,39 @@ describe("product-type rulesets", () => {
     });
     it("origin not required when domestic", () => {
         expect(statusOf(baseLabel({ countryOfOrigin: fld(null) }), baseApp(), "countryOfOrigin").status).toBe("notApplicable");
+    });
+});
+
+describe("sulfite declaration", () => {
+    it("present on wine passes", () => {
+        expect(statusOf(baseLabel({ sulfitesDeclaration: fld("Contains Sulfites") }), baseApp({ productType: "wine" }), "sulfitesDeclaration").status).toBe("pass");
+    });
+    it("absent on wine routes to review (SO₂ ppm is unknowable from the form)", () => {
+        expect(statusOf(baseLabel({ sulfitesDeclaration: fld(null) }), baseApp({ productType: "wine" }), "sulfitesDeclaration").status).toBe("review");
+    });
+    it("absent on spirits is N/A", () => {
+        expect(statusOf(baseLabel({ sulfitesDeclaration: fld(null) }), baseApp(), "sulfitesDeclaration").status).toBe("notApplicable");
+    });
+});
+
+describe("appellation gated by grape varietal", () => {
+    it("varietally-labeled wine missing appellation fails", () => {
+        expect(statusOf(baseLabel({ wineAppellation: fld(null) }), baseApp({ productType: "wine", grapeVarietals: "Cabernet Sauvignon" }), "wineAppellation").status).toBe("fail");
+    });
+    it("non-varietal wine missing appellation is N/A", () => {
+        expect(statusOf(baseLabel({ wineAppellation: fld(null) }), baseApp({ productType: "wine" }), "wineAppellation").status).toBe("notApplicable");
+    });
+});
+
+describe("wine ABV optionality", () => {
+    it("absent on wine routes to review (mandatory only over 14%)", () => {
+        expect(statusOf(baseLabel({ alcoholContent: fld(null) }), baseApp({ productType: "wine" }), "alcoholContent").status).toBe("review");
+    });
+    it("absent on spirits fails", () => {
+        expect(statusOf(baseLabel({ alcoholContent: fld(null) }), baseApp(), "alcoholContent").status).toBe("fail");
+    });
+    it("absent on unflavored malt is N/A", () => {
+        expect(statusOf(baseLabel({ alcoholContent: fld(null) }), baseApp({ productType: "maltBeverages" }), "alcoholContent").status).toBe("notApplicable");
     });
 });
 

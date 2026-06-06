@@ -82,6 +82,7 @@ export interface LabelExtraction {
     producerNameAddress: ExtractedField;
     countryOfOrigin: ExtractedField;
     wineAppellation: ExtractedField;
+    sulfitesDeclaration: ExtractedField;
     governmentWarning: ExtractedField;
     warningFormatting: WarningFormatting;
 }
@@ -140,6 +141,7 @@ export const FIELD_RULES: Record<keyof LabelExtraction, FieldRule> = {
     producerNameAddress: { matcher: "tolerant", comparesTo: "form",      required: true,  threshold: 0.80, tokenSet: true },
     countryOfOrigin:     { matcher: "presence", comparesTo: "labelOnly", required: false },
     wineAppellation:     { matcher: "tolerant", comparesTo: "form",      required: false, threshold: 0.85 },
+    sulfitesDeclaration: { matcher: "presence", comparesTo: "labelOnly", required: false },
     governmentWarning:   { matcher: "strict",   comparesTo: "statute",   required: true },
     warningFormatting:   { matcher: "strict",   comparesTo: "statute",   required: true },
 };
@@ -159,6 +161,17 @@ export interface ProductRuleset {
     abvMinByDesignation?: Record<string, number>;
     /** Malt beverages: ABV optional unless flavored / contains added alcohol. */
     abvOptional?: boolean;
+    /**
+     * Wine: ABV is mandatory only over 14% (optional, with conditions, for
+     * 7–14% "table"/"light" wine). We can't read the value when it's absent,
+     * so a missing ABV routes to review rather than a confident fail.
+     */
+    abvConditional?: boolean;
+    /**
+     * Wine: a sulfite declaration is required at ≥10 ppm SO₂ — a fact the form
+     * doesn't carry — so a missing declaration routes to review, not fail.
+     */
+    requiresSulfitesDeclaration?: boolean;
 }
 
 export const RULESET_BY_TYPE: Record<ProductType, ProductRuleset> = {
@@ -166,6 +179,8 @@ export const RULESET_BY_TYPE: Record<ProductType, ProductRuleset> = {
         abvTolerance: 0.5,
         requiresAppellationCheck: true,
         requiresOriginIfImported: true,
+        abvConditional: true,
+        requiresSulfitesDeclaration: true,
     },
     distilledSpirits: {
         abvTolerance: 0.1,

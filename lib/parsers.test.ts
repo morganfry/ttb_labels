@@ -23,7 +23,7 @@ function fullLabel(over: Record<string, unknown> = {}) {
     return {
         brandName: goodField, fancifulName: goodField, classType: goodField,
         alcoholContent: goodField, netContents: goodField, producerNameAddress: goodField,
-        countryOfOrigin: goodField, wineAppellation: goodField, governmentWarning: goodField,
+        countryOfOrigin: goodField, wineAppellation: goodField, sulfitesDeclaration: goodField, governmentWarning: goodField,
         warningFormatting: { headerAllCaps: true, headerBold: true },
         ...over,
     };

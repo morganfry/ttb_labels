@@ -115,13 +115,15 @@ export function verify(
             continue;
         }
 
-        // Absent field: fail only if required for this product type.
+        // Absent field: the verdict is product-type dependent (required → fail,
+        // conditionally-required → review, otherwise N/A). absentDecision owns
+        // that judgment so every conditional rule lives in one place.
         if (!field.found || field.value === null) {
-            const required = isRequired(key, rule.required, app, ruleset);
+            const d = absentDecision(key, rule, app, ruleset);
             fields.push({
-                field: key, status: required ? "fail" : "notApplicable",
+                field: key, status: d.status,
                 labelValue: null, applicationValue: appValue,
-                issues: required ? [`Required field "${key}" is missing from the label.`] : [],
+                issues: d.issue ? [d.issue] : [],
             });
             continue;
         }
@@ -187,14 +189,48 @@ function dispatch(
 }
 
 /**
- * Whether an absent field is a failure. Reads from the product ruleset rather
- * than a static flag, so "origin required only when imported" and "ABV
- * optional for unflavored malt beverages" come straight from the rules.
+ * The verdict for an ABSENT label field. Most absences are a simple
+ * required→fail / optional→N/A call straight from the ruleset, but three are
+ * conditional on data the form can't give us, so they route to review for a
+ * human rather than guessing:
+ *  - alcoholContent on wine — mandatory only over 14% ABV, unknowable when the
+ *    value itself is missing.
+ *  - sulfitesDeclaration on wine — required at ≥10 ppm SO₂, not on the form.
+ *  - wineAppellation — required only when a grape varietal is the class/type,
+ *    inferred here from the form's item-10 grape varietals.
  */
-function isRequired(key: keyof LabelExtraction, baseRequired: boolean, app: ApplicationData, ruleset: typeof RULESET_BY_TYPE[ProductType]): boolean {
-    if (key === "countryOfOrigin") return app.source === "imported" && ruleset.requiresOriginIfImported;
-    if (key === "alcoholContent") return !(ruleset.abvOptional ?? false);
-    return baseRequired;
+function absentDecision(
+    key: keyof LabelExtraction,
+    rule: typeof FIELD_RULES[keyof LabelExtraction],
+    app: ApplicationData,
+    ruleset: typeof RULESET_BY_TYPE[ProductType],
+): { status: FieldStatus; issue?: string } {
+    if (key === "countryOfOrigin") {
+        return app.source === "imported" && ruleset.requiresOriginIfImported
+            ? { status: "fail", issue: "Country of origin is required for imported products but is missing from the label." }
+            : { status: "notApplicable" };
+    }
+    if (key === "alcoholContent") {
+        if (ruleset.abvOptional) return { status: "notApplicable" };          // unflavored malt
+        if (ruleset.abvConditional) return { status: "review", issue: "No alcohol content found; it is mandatory for wine over 14% ABV (optional, with conditions, for 7–14% table/light wine). Confirm by eye." };
+        return { status: "fail", issue: 'Required field "alcoholContent" is missing from the label.' };
+    }
+    if (key === "wineAppellation") {
+        // Reaches here only for wine; non-wine is resolved to N/A earlier. The
+        // appellation becomes mandatory once the wine is varietally labeled.
+        const varietalLabeled = !!app.grapeVarietals && app.grapeVarietals.trim() !== "";
+        return varietalLabeled
+            ? { status: "fail", issue: "Appellation of origin is required when a grape varietal is used as the class/type designation, but none appears on the label." }
+            : { status: "notApplicable" };
+    }
+    if (key === "sulfitesDeclaration") {
+        return ruleset.requiresSulfitesDeclaration
+            ? { status: "review", issue: "No sulfite declaration found; required if the wine contains 10 ppm or more sulfur dioxide. Confirm by eye." }
+            : { status: "notApplicable" };
+    }
+    return rule.required
+        ? { status: "fail", issue: `Required field "${key}" is missing from the label.` }
+        : { status: "notApplicable" };
 }
 
 function naResult(key: keyof LabelExtraction, field: ExtractedField): FieldResult {
