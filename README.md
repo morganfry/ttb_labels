@@ -72,6 +72,9 @@ On the **Review History** screen, the most recent reviews load automatically. Na
 
 ## Architecture
 
+> Diagrams (system context, components, verification sequence) live in
+> [`docs/architecture.md`](docs/architecture.md).
+
 ### Request flow (one application)
 
 ```
