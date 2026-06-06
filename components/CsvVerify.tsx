@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useReducer, useMemo, useState, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { OVERALL_META } from "@/lib/uiTypes";
@@ -60,55 +60,103 @@ function buildPreview(rows: CsvRow[], zipIndex: ZipImageIndex | null): Preview {
     return { validCount: rows.length - invalid.length, invalid, imageIssues, needsZip };
 }
 
+/**
+ * One CSV verification session as a state machine: CSV parse → optional image
+ * ZIP → streamed run. Consolidating these into a reducer keeps the phase
+ * transitions atomic and rules out impossible combinations (e.g. a parse error
+ * showing alongside an in-flight run) that a dozen useState calls allowed.
+ * `preview` is derived (useMemo), and `dragging` stays local — it's pure UI.
+ */
+type CsvState = {
+    file: File | null; rows: CsvRow[] | null; parseError: string | null;
+    zipFile: File | null; zipIndex: ZipImageIndex | null; zipError: string | null;
+    items: Item[]; total: number; done: number; processing: boolean; processError: string | null;
+};
+type CsvAction =
+    | { type: "csvAccepted"; file: File; rows: CsvRow[] }
+    | { type: "csvRejected"; file: File; message: string }
+    | { type: "zipTooBig"; message: string }
+    | { type: "zipAccepted"; file: File; index: ZipImageIndex }
+    | { type: "zipReadError"; message: string }
+    | { type: "removeZip" }
+    | { type: "reset" }
+    | { type: "runStart" }
+    | { type: "streamStart"; total: number }
+    | { type: "streamProgress"; done: number }
+    | { type: "streamResult"; item: Item }
+    | { type: "runError"; message: string }
+    | { type: "runDone" };
+
+const INITIAL_CSV: CsvState = {
+    file: null, rows: null, parseError: null, zipFile: null, zipIndex: null, zipError: null,
+    items: [], total: 0, done: 0, processing: false, processError: null,
+};
+
+function csvReducer(s: CsvState, a: CsvAction): CsvState {
+    switch (a.type) {
+        // A new CSV resets the run state but leaves any uploaded ZIP in place.
+        case "csvAccepted":
+            return { ...s, file: a.file, rows: a.rows, parseError: null, items: [], total: 0, done: 0, processError: null };
+        case "csvRejected":
+            return { ...s, file: a.file, rows: null, parseError: a.message, items: [], total: 0, done: 0, processError: null };
+        case "zipTooBig":
+            return { ...s, zipError: a.message };
+        case "zipAccepted":
+            return { ...s, zipFile: a.file, zipIndex: a.index, zipError: null };
+        case "zipReadError":
+            return { ...s, zipError: a.message, zipFile: null, zipIndex: null };
+        case "removeZip":
+            return { ...s, zipFile: null, zipIndex: null, zipError: null };
+        case "reset":
+            return INITIAL_CSV;
+        case "runStart":
+            return { ...s, processing: true, processError: null, items: [], done: 0 };
+        case "streamStart":
+            return { ...s, total: a.total };
+        case "streamProgress":
+            return { ...s, done: a.done };
+        case "streamResult":
+            return { ...s, items: [...s.items, a.item] };
+        case "runError":
+            return { ...s, processError: a.message };
+        case "runDone":
+            return { ...s, processing: false };
+    }
+}
+
 export default function CsvVerify() {
-    const [file, setFile] = useState<File | null>(null);
-    const [rows, setRows] = useState<CsvRow[] | null>(null);
-    const [preview, setPreview] = useState<Preview | null>(null);
-    const [parseError, setParseError] = useState<string | null>(null);
-    const [zipFile, setZipFile] = useState<File | null>(null);
-    const [zipIndex, setZipIndex] = useState<ZipImageIndex | null>(null);
-    const [zipError, setZipError] = useState<string | null>(null);
-    const [items, setItems] = useState<Item[]>([]);
-    const [total, setTotal] = useState(0);
-    const [done, setDone] = useState(0);
-    const [processing, setProcessing] = useState(false);
-    const [processError, setProcessError] = useState<string | null>(null);
+    const [state, dispatch] = useReducer(csvReducer, INITIAL_CSV);
+    const { file, rows, parseError, zipFile, zipIndex, zipError, items, total, done, processing, processError } = state;
     const [dragging, setDragging] = useState(false);
     useRegisterProcessing(processing); // warn on navigation while a run is active
     const inputRef = useRef<HTMLInputElement>(null);
     const zipInputRef = useRef<HTMLInputElement>(null);
 
-    // Preview depends on both the parsed rows and the (optional) ZIP, so derive
-    // it whenever either changes — the cross-check stays correct if the ZIP is
-    // added, swapped, or removed after the CSV.
-    useEffect(() => {
-        setPreview(rows ? buildPreview(rows, zipIndex) : null);
-    }, [rows, zipIndex]);
+    // Derived from rows + the (optional) ZIP, so the cross-check stays correct
+    // whenever the ZIP is added, swapped, or removed after the CSV.
+    const preview = useMemo<Preview | null>(() => (rows ? buildPreview(rows, zipIndex) : null), [rows, zipIndex]);
 
     const acceptFile = useCallback(async (f: File) => {
-        setFile(f); setItems([]); setDone(0); setTotal(0); setProcessError(null);
         try {
             const text = await f.text();
             const { rows, headerError } = parseCsv(text);
-            if (headerError) { setParseError(headerError); setRows(null); return; }
-            setParseError(null);
-            setRows(rows);
+            if (headerError) dispatch({ type: "csvRejected", file: f, message: headerError });
+            else dispatch({ type: "csvAccepted", file: f, rows });
         } catch {
-            setParseError("Could not read the file as text."); setRows(null);
+            dispatch({ type: "csvRejected", file: f, message: "Could not read the file as text." });
         }
     }, []);
 
     const acceptZip = useCallback(async (f: File) => {
-        setZipError(null);
         if (f.size > ZIP_MAX_MB * 1024 * 1024) {
-            setZipError(`ZIP is larger than the ${ZIP_MAX_MB} MB limit.`);
+            dispatch({ type: "zipTooBig", message: `ZIP is larger than the ${ZIP_MAX_MB} MB limit.` });
             return;
         }
         try {
             const idx = indexZipImages(new Uint8Array(await f.arrayBuffer()));
-            setZipFile(f); setZipIndex(idx);
+            dispatch({ type: "zipAccepted", file: f, index: idx });
         } catch {
-            setZipError("Could not read this file as a ZIP archive."); setZipFile(null); setZipIndex(null);
+            dispatch({ type: "zipReadError", message: "Could not read this file as a ZIP archive." });
         }
     }, []);
 
@@ -122,13 +170,8 @@ export default function CsvVerify() {
         if (f) acceptZip(f);
     };
 
-    const removeZip = () => { setZipFile(null); setZipIndex(null); setZipError(null); };
-
-    const reset = () => {
-        setFile(null); setRows(null); setPreview(null); setParseError(null); setItems([]);
-        setZipFile(null); setZipIndex(null); setZipError(null);
-        setTotal(0); setDone(0); setProcessing(false); setProcessError(null);
-    };
+    const removeZip = () => dispatch({ type: "removeZip" });
+    const reset = () => dispatch({ type: "reset" });
 
     const downloadSample = () => {
         const url = URL.createObjectURL(new Blob([SAMPLE_CSV], { type: "text/csv" }));
@@ -139,19 +182,19 @@ export default function CsvVerify() {
     };
 
     const handleStreamLine = (evt: any) => {
-        if (evt.type === "start") setTotal(evt.total);
-        else if (evt.type === "progress") setDone(evt.done);
+        if (evt.type === "start") dispatch({ type: "streamStart", total: evt.total });
+        else if (evt.type === "progress") dispatch({ type: "streamProgress", done: evt.done });
         else if (evt.type === "result") {
-            setItems((prev) => [...prev, {
+            dispatch({ type: "streamResult", item: {
                 id: evt.id, name: evt.name, kind: "csv", fromZip: null, status: "done",
                 result: evt.ok ? evt.result : null, error: evt.ok ? null : evt.error,
-            }]);
+            } });
         }
     };
 
     const run = async () => {
         if (!file) return;
-        setProcessing(true); setProcessError(null); setItems([]); setDone(0);
+        dispatch({ type: "runStart" });
 
         const body = new FormData();
         body.append("csv", file, file.name);
@@ -181,9 +224,9 @@ export default function CsvVerify() {
             if (buf.trim()) try { handleStreamLine(JSON.parse(buf.trim())); }
                 catch { console.error("Malformed NDJSON trailing data:", buf.trim()); }
         } catch (e) {
-            setProcessError(e instanceof Error ? e.message : "Processing failed.");
+            dispatch({ type: "runError", message: e instanceof Error ? e.message : "Processing failed." });
         } finally {
-            setProcessing(false);
+            dispatch({ type: "runDone" });
         }
     };
 

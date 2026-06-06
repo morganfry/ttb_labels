@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useReducer, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { uid, isPdf, isZip, OVERALL_META } from "@/lib/uiTypes";
@@ -10,10 +10,53 @@ import { FileQueue } from "./FileQueue";
 import { ResultsTable } from "./ResultsTable";
 import { useRegisterProcessing } from "./ProcessingGuard";
 
+/**
+ * The PDF tab's run state as one machine: the file queue plus whether a batch is
+ * in flight. Modeling it as a reducer keeps the per-item transitions
+ * (detecting → queued/review → processing → done) atomic and rules out
+ * impossible combinations that scattered useState calls allow.
+ */
+type State = { items: Item[]; processing: boolean; processError: string | null };
+type Action =
+    | { type: "add"; items: Item[] }
+    | { type: "detected"; id: string; detection: NonNullable<Item["detection"]>; status: string }
+    | { type: "remove"; id: string }
+    | { type: "override"; id: string }
+    | { type: "reset" }
+    | { type: "runStart"; ids: string[] }
+    | { type: "result"; id: string; ok: boolean; result: unknown; error: unknown }
+    | { type: "runError"; message: string }
+    | { type: "runDone" };
+
+function reducer(s: State, a: Action): State {
+    switch (a.type) {
+        case "add":
+            return { ...s, items: [...s.items, ...a.items] };
+        case "detected":
+            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, detection: a.detection, status: a.status } : x) };
+        case "remove":
+            return { ...s, items: s.items.filter((x) => x.id !== a.id) };
+        case "override":
+            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, status: "queued" } : x) };
+        case "reset":
+            return { items: [], processing: false, processError: null };
+        case "runStart": {
+            const ids = new Set(a.ids);
+            return { ...s, processing: true, processError: null, items: s.items.map((x) => ids.has(x.id) ? { ...x, status: "processing" } : x) };
+        }
+        case "result":
+            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, status: "done", result: a.ok ? a.result : null, error: a.ok ? null : a.error } : x) };
+        case "runError":
+            // Revert any still-processing rows to queued so they can be retried.
+            return { ...s, processError: a.message, items: s.items.map((x) => x.status === "processing" ? { ...x, status: "queued" } : x) };
+        case "runDone":
+            return { ...s, processing: false };
+    }
+}
+
 export default function VerificationApp() {
-    const [items, setItems] = useState<Item[]>([]);
-    const [processing, setProcessing] = useState(false);
-    const [processError, setProcessError] = useState<string | null>(null);
+    const [state, dispatch] = useReducer(reducer, { items: [], processing: false, processError: null });
+    const { items, processing, processError } = state;
     useRegisterProcessing(processing); // warn on navigation while a run is active
 
     const addFiles = useCallback((fileList: FileList) => {
@@ -23,35 +66,34 @@ export default function VerificationApp() {
             else if (isZip(f.name)) incoming.push({ id: uid(), name: f.name, kind: "zip", fromZip: null, status: "needsExtract", result: null, file: f });
         }
         if (!incoming.length) return;
-        setItems((prev) => [...prev, ...incoming]);
+        dispatch({ type: "add", items: incoming });
         incoming.filter((it) => it.kind === "pdf").forEach((it) => {
             detectOne(it.file!).then((detection) => {
-                setItems((prev) => prev.map((x) => x.id === it.id ? { ...x, detection, status: detection.status === "ready" ? "queued" : "review" } : x));
+                dispatch({ type: "detected", id: it.id, detection, status: detection.status === "ready" ? "queued" : "review" });
             });
         });
     }, []);
 
-    const removeItem = (id: string) => setItems((prev) => prev.filter((it) => it.id !== id));
-    const overrideToReady = (id: string) => setItems((prev) => prev.map((x) => x.id === id ? { ...x, status: "queued" } : x));
-    const reset = () => { setItems([]); setProcessing(false); setProcessError(null); };
+    const removeItem = (id: string) => dispatch({ type: "remove", id });
+    const overrideToReady = (id: string) => dispatch({ type: "override", id });
+    const reset = () => dispatch({ type: "reset" });
 
     const handleStreamLine = (evt: any) => {
         if (evt.type === "result") {
-            setItems((prev) => prev.map((x) => x.id === evt.id ? { ...x, status: "done", result: evt.ok ? evt.result : null, error: evt.ok ? null : evt.error } : x));
+            dispatch({ type: "result", id: evt.id, ok: evt.ok, result: evt.result, error: evt.error });
         }
     };
 
     const runVerification = async () => {
         const pending = items.filter((it) => it.kind === "pdf" && it.status === "queued");
         if (pending.length === 0) return;
-        setProcessing(true); setProcessError(null);
+        dispatch({ type: "runStart", ids: pending.map((it) => it.id) });
 
         const body = new FormData();
         body.append("pairs", JSON.stringify(pending.map((it) => ({ id: it.id, name: it.name }))));
         for (const it of pending) {
             body.append(`label_${it.id}`, it.file!, it.name);
             body.append(`form_${it.id}`, it.file!, it.name);
-            setItems((prev) => prev.map((x) => x.id === it.id ? { ...x, status: "processing" } : x));
         }
 
         try {
@@ -78,10 +120,9 @@ export default function VerificationApp() {
             if (buf.trim()) try { handleStreamLine(JSON.parse(buf.trim())); }
                 catch { console.error("Malformed NDJSON trailing data:", buf.trim()); }
         } catch (e) {
-            setProcessError(e instanceof Error ? e.message : "Processing failed.");
-            setItems((prev) => prev.map((x) => x.status === "processing" ? { ...x, status: "queued" } : x));
+            dispatch({ type: "runError", message: e instanceof Error ? e.message : "Processing failed." });
         } finally {
-            setProcessing(false);
+            dispatch({ type: "runDone" });
         }
     };
 
