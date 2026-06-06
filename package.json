@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@tanstack/react-query": "^5.101.0",
     "fastest-levenshtein": "^1.0.16",
     "fflate": "^0.8.3",
     "lucide-react": "^1.17.0",
