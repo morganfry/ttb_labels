@@ -6,7 +6,7 @@
  * the browser) lives in the thin adapter detectClient.ts.
  */
 
-export type DetectConfidence = "high" | "low";
+type DetectConfidence = "high" | "low";
 
 export interface RegionDetection {
     hasForm: boolean;

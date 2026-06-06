@@ -1,4 +1,4 @@
-export { migrate, sql } from "./db";
+export { migrate } from "./db";
 export { saveResult } from "./persistWrite";
 export {
     search, getResult,

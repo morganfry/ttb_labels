@@ -23,7 +23,7 @@ export const IMAGE_URLS_COLUMN = "labelImageUrls";
 const IMG_EXT_RE = /\.(jpe?g|png|webp|gif)$/i;
 
 /** True for an http(s) URL reference (fetched), false for a local ZIP file name. */
-export function isHttpImageRef(ref: string): boolean {
+function isHttpImageRef(ref: string): boolean {
     return /^https?:\/\//i.test(ref);
 }
 

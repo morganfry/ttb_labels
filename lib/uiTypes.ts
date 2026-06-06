@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, Eye } from "lucide-react";
 
-export type Detection = {
+type Detection = {
     hasForm: boolean; formConfidence: "high" | "low";
     hasLabel: boolean; labelConfidence: "high" | "low";
     status: "ready" | "review"; notes: string[];

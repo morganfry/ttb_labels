@@ -88,7 +88,7 @@ export interface LabelExtraction {
  * - `strict`   — exact canonical match, no tolerance
  * - `presence` — field must simply be present & well-formed
  */
-export type MatcherKind = "tolerant" | "numeric" | "strict" | "presence";
+type MatcherKind = "tolerant" | "numeric" | "strict" | "presence";
 
 /** Per-field rule consumed by the matching dispatcher. */
 export interface FieldRule {
