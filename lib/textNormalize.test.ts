@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalize, collapseSpaces, similarity, stripResponsibilityPrefix, normalizeUsStates, stripLeadingVintage } from "./textNormalize";
+import { normalize, collapseSpaces, similarity, stripResponsibilityPrefix, normalizeUsStates, stripLeadingVintage, tokensSubsumed } from "./textNormalize";
 
 describe("normalize", () => {
     it("folds case, punctuation, and whitespace", () => {
@@ -78,5 +78,20 @@ describe("stripLeadingVintage", () => {
     it("leaves a non-vintage leading number alone (e.g. the brand 1792)", () => {
         expect(stripLeadingVintage("1792 Small Batch")).toBe("1792 Small Batch");
         expect(stripLeadingVintage("Rosé")).toBe("Rosé");
+    });
+});
+
+describe("tokensSubsumed", () => {
+    it("is true when the shorter name's words are all in the longer (either order)", () => {
+        expect(tokensSubsumed("VERONA HILLS", "Verona Hills Vineyards")).toBe(true);
+        expect(tokensSubsumed("Verona Hills Vineyards", "VERONA HILLS")).toBe(true);
+        expect(tokensSubsumed("Briarwood Estate Winery", "ESTATE BOTTLED BY BRIARWOOD ESTATE WINERY")).toBe(true);
+    });
+    it("requires at least two shared words (a lone token is not enough)", () => {
+        expect(tokensSubsumed("Reserve", "Reserve Cabernet")).toBe(false);
+    });
+    it("is false when the shorter name has a word the longer lacks", () => {
+        expect(tokensSubsumed("Verona Springs", "Verona Hills Vineyards")).toBe(false);
+        expect(tokensSubsumed("Eagle Rare", "Old Tom Distillery")).toBe(false);
     });
 });

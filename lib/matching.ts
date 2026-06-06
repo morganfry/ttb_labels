@@ -14,7 +14,7 @@ import {
     type ApplicationData, type ProductType, type Confidence,
     type FieldResult, type FieldStatus, type VerificationResult,
 } from "./schema";
-import { collapseSpaces, similarity, stripResponsibilityPrefix, normalizeUsStates, stripLeadingVintage } from "./textNormalize";
+import { collapseSpaces, similarity, stripResponsibilityPrefix, normalizeUsStates, stripLeadingVintage, tokensSubsumed } from "./textNormalize";
 import { parsePercent, parseVolumeMl } from "./unitParse";
 
 // Re-export so importers/tests that pulled these from ./matching still work.
@@ -34,7 +34,12 @@ interface TolerantArgs {
  * the ambiguous cases while auto-passing the clearly-equivalent ones.
  */
 function tolerantMatch(a: TolerantArgs): { status: FieldStatus; score: number; issues: string[] } {
-    const score = similarity(a.scoreLabel ?? a.labelValue, a.scoreApp ?? a.appValue, a.tokenSet);
+    const sl = a.scoreLabel ?? a.labelValue, sa = a.scoreApp ?? a.appValue;
+    let score = similarity(sl, sa, a.tokenSet);
+    // One name fully contained in the other (≥2 shared words) is a confident
+    // match that edit-distance underrates — e.g. "VERONA HILLS" vs "Verona Hills
+    // Vineyards", or a producer block with extra "ESTATE BOTTLED BY" boilerplate.
+    if (score < 0.97 && tokensSubsumed(sl, sa)) score = 0.97;
     const review = a.reviewBand ?? a.threshold; // no band → no review zone
     if (score >= review) return { status: "pass", score, issues: [] };
     if (score >= a.threshold) return { status: "review", score, issues: [`Close but not exact (similarity ${score.toFixed(2)}); confirm by eye.`] };

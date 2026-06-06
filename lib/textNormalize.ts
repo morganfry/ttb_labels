@@ -75,6 +75,24 @@ export function stripLeadingVintage(s: string): string {
 }
 
 /**
+ * True when one name's words are fully contained in the other's — the shorter
+ * side (≥ `minTokens` distinct words) is a subset of the longer. Catches the
+ * common cases edit-distance underrates: a label brand that omits a
+ * "Vineyards"/"Winery" suffix, or a producer block carrying extra boilerplate
+ * ("ESTATE BOTTLED BY …") the form leaves out. The `minTokens` floor keeps a
+ * single shared word (e.g. "Reserve") from forcing a match.
+ */
+export function tokensSubsumed(a: string, b: string, minTokens = 2): boolean {
+    const ta = [...new Set(normalize(a).split(" ").filter(Boolean))];
+    const tb = [...new Set(normalize(b).split(" ").filter(Boolean))];
+    if (ta.length === 0 || tb.length === 0) return false;
+    const [small, large] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+    if (small.length < minTokens) return false;
+    const largeSet = new Set(large);
+    return small.every((t) => largeSet.has(t));
+}
+
+/**
  * Normalized similarity in [0, 1] (1 = identical after normalization).
  *
  * @param a - first string

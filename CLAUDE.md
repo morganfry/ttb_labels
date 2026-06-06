@@ -103,6 +103,11 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   vintage year). It's applied to BOTH sides for SCORING only via tolerantMatch's
   scoreLabel/scoreApp — displayed values stay verbatim. Add a preset there rather
   than special-casing a field in the dispatcher.
+- tolerantMatch also applies a token-CONTAINMENT boost (tokensSubsumed): if one
+  name's words (≥2) are fully inside the other, score is lifted to a pass. This
+  is what makes "VERONA HILLS" match "Verona Hills Vineyards" and absorbs
+  producer boilerplate. The ≥2 floor is the safety bound — don't drop it (a lone
+  shared token would force spurious matches).
 - Pure logic stays framework-free in lib/ and gets a Vitest test (csvParse.ts
   is framework-free precisely so it can be reused on the client for preview).
 - Comment the WHY, not the what. TSDoc on exported/public surfaces.

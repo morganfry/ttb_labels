@@ -97,6 +97,25 @@ describe("field-aware tolerant normalization", () => {
         );
         expect(r.status).toBe("fail");
     });
+    it("brand: label that drops a suffix matches ('VERONA HILLS' ⊆ 'Verona Hills Vineyards')", () => {
+        const r = statusOf(
+            baseLabel({ brandName: fld("VERONA HILLS") }),
+            baseApp({ brandName: "Verona Hills Vineyards" }),
+            "brandName",
+        );
+        expect(r.status).toBe("pass");
+    });
+    it("producer: 'ESTATE BOTTLED BY …' boilerplate still matches via containment", () => {
+        const r = statusOf(
+            baseLabel({ producerNameAddress: fld("ESTATE BOTTLED BY BRIARWOOD ESTATE WINERY, PASO ROBLES, CALIFORNIA") }),
+            baseApp({ applicantNameAddress: "Briarwood Estate Winery, Paso Robles, CA" }),
+            "producerNameAddress",
+        );
+        expect(r.status).toBe("pass");
+    });
+    it("a single shared word is NOT enough to force a match", () => {
+        expect(statusOf(baseLabel({ brandName: fld("Reserve") }), baseApp({ brandName: "Reserve Cabernet" }), "brandName").status).toBe("fail");
+    });
     it("missing required brand fails", () => {
         expect(statusOf(baseLabel({ brandName: fld(null) }), baseApp(), "brandName").status).toBe("fail");
     });
