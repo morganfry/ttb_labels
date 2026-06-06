@@ -103,6 +103,14 @@ export interface FieldRule {
     reviewBand?: number;
     /** tolerant: compare word sets, ignoring order. */
     tokenSet?: boolean;
+    /**
+     * tolerant: extra field-aware cleanup applied to BOTH sides before scoring,
+     * to fold away label boilerplate the form omits.
+     * - "address": strip a "BOTTLED BY"-style prefix and map full state names
+     *   to abbreviations (so "…Charleston, South Carolina" ≡ "…Charleston, SC").
+     * - "designation": drop a leading vintage year ("2023 Rosé" ≡ "Rosé").
+     */
+    normalize?: "address" | "designation";
     /** numeric: allowed absolute difference. */
     tolerance?: number;
     /** numeric: unit to normalize to before comparing. */
@@ -128,11 +136,11 @@ export const FORM_COUNTERPART: Partial<Record<keyof LabelExtraction, keyof Appli
  */
 export const FIELD_RULES: Record<keyof LabelExtraction, FieldRule> = {
     brandName:           { matcher: "tolerant", comparesTo: "form",      required: true,  threshold: 0.85, reviewBand: 0.95 },
-    fancifulName:        { matcher: "tolerant", comparesTo: "form",      required: false, threshold: 0.85, reviewBand: 0.95 },
+    fancifulName:        { matcher: "tolerant", comparesTo: "form",      required: false, threshold: 0.85, reviewBand: 0.95, normalize: "designation" },
     classType:           { matcher: "tolerant", comparesTo: "labelOnly", required: true,  threshold: 0.80, tokenSet: true },
     alcoholContent:      { matcher: "numeric",  comparesTo: "labelOnly", required: true,  tolerance: 0.1, unit: "percent" },
     netContents:         { matcher: "numeric",  comparesTo: "labelOnly", required: true,  tolerance: 0.01, unit: "ml" },
-    producerNameAddress: { matcher: "tolerant", comparesTo: "form",      required: true,  threshold: 0.80, tokenSet: true },
+    producerNameAddress: { matcher: "tolerant", comparesTo: "form",      required: true,  threshold: 0.80, tokenSet: true, normalize: "address" },
     countryOfOrigin:     { matcher: "presence", comparesTo: "labelOnly", required: false },
     wineAppellation:     { matcher: "tolerant", comparesTo: "form",      required: false, threshold: 0.85 },
     sulfitesDeclaration: { matcher: "presence", comparesTo: "labelOnly", required: false },

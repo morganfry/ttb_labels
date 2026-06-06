@@ -29,6 +29,51 @@ export function collapseSpaces(s: string): string {
     return s.replace(/\s+/g, " ").trim();
 }
 
+// ── Field-specific cleanup ──────────────────────────────────────────────────
+// The form carries a bare name/address and fanciful name; the label often adds
+// boilerplate the form omits. Folding that away (on BOTH sides) before scoring
+// prevents real matches from sinking. Each helper is a no-op when nothing
+// matches, so applying it symmetrically is safe.
+
+/** Statement-of-responsibility verbs that prefix a producer block on a label. */
+const RESP_VERBS = "bottled|distilled|produced|brewed|vinted|blended|made|packed|prepared|cellared|crafted|fermented|imported|manufactured|canned|filled";
+const RESP_PREFIX_RE = new RegExp(`^\\s*(?:${RESP_VERBS})(?:\\s+and\\s+(?:${RESP_VERBS}))?\\s+by\\s+`, "i");
+
+/**
+ * Strip a leading "BOTTLED BY" / "PRODUCED AND BOTTLED BY" / "IMPORTED BY" etc.
+ * — label phrasing the COLA name/address field doesn't include.
+ */
+export function stripResponsibilityPrefix(s: string): string {
+    return s.replace(RESP_PREFIX_RE, "").trim();
+}
+
+/** US state (and DC) full name → USPS abbreviation, so "South Carolina" ≡ "SC". */
+const US_STATES: Record<string, string> = {
+    "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
+    "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
+    "hawaii": "hi", "idaho": "id", "illinois": "il", "indiana": "in", "iowa": "ia", "kansas": "ks",
+    "kentucky": "ky", "louisiana": "la", "maine": "me", "maryland": "md", "massachusetts": "ma",
+    "michigan": "mi", "minnesota": "mn", "mississippi": "ms", "missouri": "mo", "montana": "mt",
+    "nebraska": "ne", "nevada": "nv", "new hampshire": "nh", "new jersey": "nj", "new mexico": "nm",
+    "new york": "ny", "north carolina": "nc", "north dakota": "nd", "ohio": "oh", "oklahoma": "ok",
+    "oregon": "or", "pennsylvania": "pa", "rhode island": "ri", "south carolina": "sc",
+    "south dakota": "sd", "tennessee": "tn", "texas": "tx", "utah": "ut", "vermont": "vt",
+    "virginia": "va", "washington": "wa", "west virginia": "wv", "wisconsin": "wi",
+    "wyoming": "wy", "district of columbia": "dc",
+};
+// Longest-first so "west virginia" matches before "virginia", "north dakota" before "dakota", etc.
+const US_STATE_RE = new RegExp(`\\b(${Object.keys(US_STATES).sort((a, b) => b.length - a.length).join("|")})\\b`, "gi");
+
+/** Replace full US state names with their abbreviations (case-insensitive). */
+export function normalizeUsStates(s: string): string {
+    return s.replace(US_STATE_RE, (m) => US_STATES[m.toLowerCase()] ?? m);
+}
+
+/** Drop a leading vintage year ("2023 Rosé" → "Rosé"); leaves "1792" etc. alone. */
+export function stripLeadingVintage(s: string): string {
+    return s.replace(/^\s*(?:19|20)\d{2}\b\s*/, "").trim();
+}
+
 /**
  * Normalized similarity in [0, 1] (1 = identical after normalization).
  *

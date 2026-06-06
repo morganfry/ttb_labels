@@ -98,6 +98,11 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
 - parseLabel accepts one ExtractionInput or an array (multi-view labels); the
   array is sent as multiple content blocks in ONE model call, not N calls.
 - New matcher → matching.ts; pure helpers → textNormalize.ts / unitParse.ts.
+- Field-aware tolerant cleanup lives behind FieldRule.normalize ("address" strips
+  a BOTTLED-BY prefix + maps state names→abbrev; "designation" drops a leading
+  vintage year). It's applied to BOTH sides for SCORING only via tolerantMatch's
+  scoreLabel/scoreApp — displayed values stay verbatim. Add a preset there rather
+  than special-casing a field in the dispatcher.
 - Pure logic stays framework-free in lib/ and gets a Vitest test (csvParse.ts
   is framework-free precisely so it can be reused on the client for preview).
 - Comment the WHY, not the what. TSDoc on exported/public surfaces.

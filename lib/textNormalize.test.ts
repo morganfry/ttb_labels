@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalize, collapseSpaces, similarity } from "./textNormalize";
+import { normalize, collapseSpaces, similarity, stripResponsibilityPrefix, normalizeUsStates, stripLeadingVintage } from "./textNormalize";
 
 describe("normalize", () => {
     it("folds case, punctuation, and whitespace", () => {
@@ -43,5 +43,40 @@ describe("similarity", () => {
     });
     it("treats two empty strings as identical", () => {
         expect(similarity("", "")).toBe(1.0);
+    });
+});
+
+describe("stripResponsibilityPrefix", () => {
+    it("strips a leading BOTTLED BY / PRODUCED AND BOTTLED BY phrase", () => {
+        expect(stripResponsibilityPrefix("BOTTLED BY Captain's Bay Rum Co.")).toBe("Captain's Bay Rum Co.");
+        expect(stripResponsibilityPrefix("Produced and Bottled by Oak Valley")).toBe("Oak Valley");
+        expect(stripResponsibilityPrefix("IMPORTED BY Old Pier")).toBe("Old Pier");
+    });
+    it("leaves a name without a responsibility prefix unchanged", () => {
+        expect(stripResponsibilityPrefix("Captain's Bay Rum Co., Charleston, SC")).toBe("Captain's Bay Rum Co., Charleston, SC");
+    });
+});
+
+describe("normalizeUsStates", () => {
+    it("maps full state names to abbreviations", () => {
+        expect(normalizeUsStates("Charleston, South Carolina")).toBe("Charleston, sc");
+        expect(normalizeUsStates("Napa, California")).toBe("Napa, ca");
+    });
+    it("prefers the longer name (West Virginia, not Virginia)", () => {
+        expect(normalizeUsStates("Wheeling, West Virginia")).toBe("Wheeling, wv");
+    });
+    it("leaves existing abbreviations and non-state words alone", () => {
+        expect(normalizeUsStates("Charleston, SC")).toBe("Charleston, SC");
+    });
+});
+
+describe("stripLeadingVintage", () => {
+    it("drops a leading vintage year", () => {
+        expect(stripLeadingVintage("2023 Rosé")).toBe("Rosé");
+        expect(stripLeadingVintage("2019 Reserve Cabernet")).toBe("Reserve Cabernet");
+    });
+    it("leaves a non-vintage leading number alone (e.g. the brand 1792)", () => {
+        expect(stripLeadingVintage("1792 Small Batch")).toBe("1792 Small Batch");
+        expect(stripLeadingVintage("Rosé")).toBe("Rosé");
     });
 });

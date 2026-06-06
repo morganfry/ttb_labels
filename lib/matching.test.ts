@@ -70,6 +70,33 @@ describe("brand name matching", () => {
     it("genuine mismatch fails", () => {
         expect(statusOf(baseLabel({ brandName: fld("Eagle Rare") }), baseApp({ brandName: "Old Tom Distillery" }), "brandName").status).toBe("fail");
     });
+});
+
+describe("field-aware tolerant normalization", () => {
+    it("producer: 'BOTTLED BY … South Carolina' matches '… , SC'", () => {
+        const r = statusOf(
+            baseLabel({ producerNameAddress: fld("BOTTLED BY CAPTAIN'S BAY RUM CO. CHARLESTON, SOUTH CAROLINA") }),
+            baseApp({ applicantNameAddress: "Captain's Bay Rum Co., Charleston, SC" }),
+            "producerNameAddress",
+        );
+        expect(r.status).toBe("pass");
+    });
+    it("fanciful: 'ROSÉ' matches '2023 Rosé' (vintage + accent folded)", () => {
+        const r = statusOf(
+            baseLabel({ fancifulName: fld("ROSÉ") }),
+            baseApp({ productType: "wine", fancifulName: "2023 Rosé" }),
+            "fancifulName",
+        );
+        expect(r.status).toBe("pass");
+    });
+    it("still fails a genuinely different producer", () => {
+        const r = statusOf(
+            baseLabel({ producerNameAddress: fld("BOTTLED BY Eagle Rare Distillery, Frankfort, KY") }),
+            baseApp({ applicantNameAddress: "Captain's Bay Rum Co., Charleston, SC" }),
+            "producerNameAddress",
+        );
+        expect(r.status).toBe("fail");
+    });
     it("missing required brand fails", () => {
         expect(statusOf(baseLabel({ brandName: fld(null) }), baseApp(), "brandName").status).toBe("fail");
     });
