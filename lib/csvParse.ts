@@ -50,6 +50,18 @@ const REQUIRED_COLUMNS = ["serialNumber", "productType", "source", "brandName", 
 const PRODUCT_TYPES: ProductType[] = ["wine", "distilledSpirits", "maltBeverages"];
 const SOURCES: ProductSource[] = ["domestic", "imported"];
 
+/**
+ * Accepted CSV `productType` inputs → canonical {@link ProductType}. The
+ * singular "maltBeverage" is accepted as an alias for "maltBeverages" because
+ * agents commonly type it that way; the rest of the app keeps the plural enum.
+ */
+const PRODUCT_TYPE_ALIASES: Record<string, ProductType> = {
+    wine: "wine",
+    distilledSpirits: "distilledSpirits",
+    maltBeverages: "maltBeverages",
+    maltBeverage: "maltBeverages",
+};
+
 /** One parsed row: either a usable application + image references, or an error. */
 export interface CsvRow {
     /** 1-based row number as it appears in the file (excluding the header). */
@@ -104,7 +116,8 @@ function parseRow(cells: string[], index: Record<string, number>, rowNumber: num
     const fail = (error: string): CsvRow => ({ rowNumber, error });
 
     const productTypeRaw = get("productType");
-    if (!PRODUCT_TYPES.includes(productTypeRaw as ProductType)) {
+    const productType = PRODUCT_TYPE_ALIASES[productTypeRaw];
+    if (!productType) {
         return fail(`Invalid productType "${productTypeRaw}" (expected one of ${PRODUCT_TYPES.join(", ")}).`);
     }
     const sourceRaw = get("source");
@@ -130,7 +143,7 @@ function parseRow(cells: string[], index: Record<string, number>, rowNumber: num
 
     const app: ApplicationData = {
         serialNumber: get("serialNumber"),
-        productType: productTypeRaw as ProductType,
+        productType,
         source: sourceRaw as ProductSource,
         brandName: get("brandName"),
         fancifulName: optional("fancifulName"),

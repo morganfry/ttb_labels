@@ -19,7 +19,7 @@ const SAMPLE_CSV = `${CSV_COLUMNS.join(",")}
 
 const COLUMN_NOTES: Record<string, string> = {
     serialNumber: "Required. COLA item 4, e.g. 24-1.",
-    productType: "Required. One of: wine, distilledSpirits, maltBeverages.",
+    productType: "Required. One of: wine, distilledSpirits, maltBeverages (maltBeverage is also accepted).",
     source: "Required. One of: domestic, imported.",
     brandName: "Required. COLA item 6.",
     fancifulName: "Optional. COLA item 7.",
