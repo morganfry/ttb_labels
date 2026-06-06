@@ -1,11 +1,15 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
-import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, Download, X } from "lucide-react";
+import { useRef, useState, useCallback, useEffect } from "react";
+import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { OVERALL_META } from "@/lib/uiTypes";
-import { parseCsv, CSV_COLUMNS, IMAGE_URLS_COLUMN } from "@/lib/csvParse";
+import { parseCsv, isLocalImageRef, CSV_COLUMNS, IMAGE_URLS_COLUMN, type CsvRow } from "@/lib/csvParse";
+import { indexZipImages, zipHasImage, type ZipImageIndex } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
+
+/** Client-side ZIP size guard (MB); the server enforces the authoritative cap. */
+const ZIP_MAX_MB = 100;
 
 /** A worked example shown on the page and offered as a downloadable template. */
 const SAMPLE_CSV = `${CSV_COLUMNS.join(",")}
@@ -22,15 +26,47 @@ const COLUMN_NOTES: Record<string, string> = {
     applicantNameAddress: "Required. COLA item 8 — name + address.",
     grapeVarietals: "Optional, wine only. COLA item 10. If set, an appellation becomes required on the label.",
     wineAppellation: "Optional, wine only. COLA item 11.",
-    [IMAGE_URLS_COLUMN]: "Required. JSON array of label image URLs, e.g. [\"https://…/front.jpg\",\"https://…/back.jpg\"]. Multiple URLs are treated as views of one label.",
+    [IMAGE_URLS_COLUMN]: "Required. JSON array of image references — http(s) URLs and/or file names inside an uploaded ZIP, e.g. [\"front.jpg\",\"back.jpg\"]. Multiple entries are treated as views of one label.",
 };
 
-type Preview = { validCount: number; invalid: { rowNumber: number; error: string }[] };
+type RowIssue = { rowNumber: number; error: string };
+type Preview = {
+    validCount: number;
+    invalid: RowIssue[];
+    /** Local-file references that still need (or are missing from) the ZIP. */
+    imageIssues: RowIssue[];
+    /** True if any valid row references a local file (so a ZIP is expected). */
+    needsZip: boolean;
+};
+
+/** Derive the preview from parsed rows and the (optional) uploaded ZIP index. */
+function buildPreview(rows: CsvRow[], zipIndex: ZipImageIndex | null): Preview {
+    const invalid = rows.filter((r) => r.error).map((r) => ({ rowNumber: r.rowNumber, error: r.error! }));
+    const imageIssues: RowIssue[] = [];
+    let needsZip = false;
+    for (const r of rows) {
+        if (r.error || !r.imageRefs) continue;
+        const locals = r.imageRefs.filter(isLocalImageRef);
+        if (locals.length === 0) continue;
+        needsZip = true;
+        if (!zipIndex) {
+            imageIssues.push({ rowNumber: r.rowNumber, error: `needs the image ZIP (${locals.length} local file${locals.length === 1 ? "" : "s"})` });
+            continue;
+        }
+        const missing = locals.filter((n) => !zipHasImage(zipIndex, n));
+        if (missing.length) imageIssues.push({ rowNumber: r.rowNumber, error: `not found in ZIP: ${missing.join(", ")}` });
+    }
+    return { validCount: rows.length - invalid.length, invalid, imageIssues, needsZip };
+}
 
 export default function CsvVerify() {
     const [file, setFile] = useState<File | null>(null);
+    const [rows, setRows] = useState<CsvRow[] | null>(null);
     const [preview, setPreview] = useState<Preview | null>(null);
     const [parseError, setParseError] = useState<string | null>(null);
+    const [zipFile, setZipFile] = useState<File | null>(null);
+    const [zipIndex, setZipIndex] = useState<ZipImageIndex | null>(null);
+    const [zipError, setZipError] = useState<string | null>(null);
     const [items, setItems] = useState<Item[]>([]);
     const [total, setTotal] = useState(0);
     const [done, setDone] = useState(0);
@@ -38,20 +74,39 @@ export default function CsvVerify() {
     const [processError, setProcessError] = useState<string | null>(null);
     const [dragging, setDragging] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const zipInputRef = useRef<HTMLInputElement>(null);
+
+    // Preview depends on both the parsed rows and the (optional) ZIP, so derive
+    // it whenever either changes — the cross-check stays correct if the ZIP is
+    // added, swapped, or removed after the CSV.
+    useEffect(() => {
+        setPreview(rows ? buildPreview(rows, zipIndex) : null);
+    }, [rows, zipIndex]);
 
     const acceptFile = useCallback(async (f: File) => {
         setFile(f); setItems([]); setDone(0); setTotal(0); setProcessError(null);
         try {
             const text = await f.text();
             const { rows, headerError } = parseCsv(text);
-            if (headerError) { setParseError(headerError); setPreview(null); return; }
+            if (headerError) { setParseError(headerError); setRows(null); return; }
             setParseError(null);
-            setPreview({
-                validCount: rows.filter((r) => !r.error).length,
-                invalid: rows.filter((r) => r.error).map((r) => ({ rowNumber: r.rowNumber, error: r.error! })),
-            });
+            setRows(rows);
         } catch {
-            setParseError("Could not read the file as text."); setPreview(null);
+            setParseError("Could not read the file as text."); setRows(null);
+        }
+    }, []);
+
+    const acceptZip = useCallback(async (f: File) => {
+        setZipError(null);
+        if (f.size > ZIP_MAX_MB * 1024 * 1024) {
+            setZipError(`ZIP is larger than the ${ZIP_MAX_MB} MB limit.`);
+            return;
+        }
+        try {
+            const idx = indexZipImages(new Uint8Array(await f.arrayBuffer()));
+            setZipFile(f); setZipIndex(idx);
+        } catch {
+            setZipError("Could not read this file as a ZIP archive."); setZipFile(null); setZipIndex(null);
         }
     }, []);
 
@@ -60,8 +115,16 @@ export default function CsvVerify() {
         if (f) acceptFile(f);
     };
 
+    const onPickZip = (files: FileList | null) => {
+        const f = files?.[0];
+        if (f) acceptZip(f);
+    };
+
+    const removeZip = () => { setZipFile(null); setZipIndex(null); setZipError(null); };
+
     const reset = () => {
-        setFile(null); setPreview(null); setParseError(null); setItems([]);
+        setFile(null); setRows(null); setPreview(null); setParseError(null); setItems([]);
+        setZipFile(null); setZipIndex(null); setZipError(null);
         setTotal(0); setDone(0); setProcessing(false); setProcessError(null);
     };
 
@@ -90,6 +153,7 @@ export default function CsvVerify() {
 
         const body = new FormData();
         body.append("csv", file, file.name);
+        if (zipFile) body.append("images", zipFile, zipFile.name);
         try {
             const res = await fetch("/api/verify-csv", { method: "POST", body });
             if (!res.ok || !res.body) {
@@ -143,7 +207,7 @@ export default function CsvVerify() {
                 >
                     <Upload size={40} strokeWidth={1.5} className={`mx-auto mb-3 ${dragging ? "text-blue-600" : "text-slate-500"}`} />
                     <div className="text-lg font-semibold">{dragging ? "Drop the CSV to add it" : "Drag a CSV here, or click to browse"}</div>
-                    <div className="text-sm text-slate-400">One application per row; the last column is a JSON array of label image URLs.</div>
+                    <div className="text-sm text-slate-400">One application per row; the last column lists label images by URL or by file name (with a ZIP).</div>
                     <input ref={inputRef} type="file" accept=".csv,text/csv" className="hidden"
                            onChange={(e) => { onPick(e.target.files); e.target.value = ""; }} />
                 </div>
@@ -167,6 +231,48 @@ export default function CsvVerify() {
                 </div>
             )}
 
+            {/* Optional ZIP of label images, for rows that name files instead of URLs. */}
+            {file && !zipFile && (
+                <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => { e.preventDefault(); onPickZip(e.dataTransfer?.files ?? null); }}
+                    onClick={() => zipInputRef.current?.click()}
+                    className={`mb-5 flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-3.5 transition-colors ${
+                        preview?.needsZip ? "border-amber-300 hover:border-amber-400" : "border-slate-300 hover:border-slate-400"}`}
+                >
+                    <FileArchive size={22} className={`shrink-0 ${preview?.needsZip ? "text-amber-600" : "text-slate-400"}`} />
+                    <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-slate-700">
+                            {preview?.needsZip ? "Upload the image ZIP" : "Optional: ZIP of label images"}
+                        </div>
+                        <div className="text-xs text-slate-400">Needed only for rows that reference image files by name. Drag a .zip here, or click to browse.</div>
+                    </div>
+                    <input ref={zipInputRef} type="file" accept=".zip,application/zip" className="hidden"
+                           onChange={(e) => { onPickZip(e.target.files); e.target.value = ""; }} />
+                </div>
+            )}
+
+            {file && zipFile && (
+                <div className="mb-5 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
+                    <FileArchive size={22} className="shrink-0 text-violet-600" />
+                    <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium" title={zipFile.name}>{zipFile.name}</div>
+                        {zipIndex && <div className="text-sm text-slate-500">{zipIndex.byPath.size} image{zipIndex.byPath.size === 1 ? "" : "s"} in archive</div>}
+                    </div>
+                    {!processing && (
+                        <button onClick={removeZip} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Remove ZIP">
+                            <X size={18} />
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {zipError && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-100 px-4 py-3 text-sm text-red-800">
+                    <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-700" /> <span>{zipError}</span>
+                </div>
+            )}
+
             {parseError && (
                 <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-100 px-4 py-3 text-sm text-red-800">
                     <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-700" /> <span>{parseError}</span>
@@ -179,6 +285,16 @@ export default function CsvVerify() {
                     <ul className="ml-1 list-inside list-disc space-y-0.5">
                         {preview.invalid.slice(0, 10).map((r) => <li key={r.rowNumber}>Row {r.rowNumber}: {r.error}</li>)}
                         {preview.invalid.length > 10 && <li>…and {preview.invalid.length - 10} more.</li>}
+                    </ul>
+                </div>
+            )}
+
+            {preview && preview.imageIssues.length > 0 && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <div className="mb-1.5 flex items-center gap-2 font-medium"><AlertTriangle size={16} className="text-amber-600" /> Local image references to resolve (these rows will error until fixed):</div>
+                    <ul className="ml-1 list-inside list-disc space-y-0.5">
+                        {preview.imageIssues.slice(0, 10).map((r) => <li key={r.rowNumber}>Row {r.rowNumber}: {r.error}</li>)}
+                        {preview.imageIssues.length > 10 && <li>…and {preview.imageIssues.length - 10} more.</li>}
                     </ul>
                 </div>
             )}
@@ -247,7 +363,14 @@ function CsvFormatGuide({ onDownload }: { onDownload: () => void }) {
             <p className="mb-3 text-sm text-slate-500">
                 One application per row. The application (COLA Part I) fields are columns; the label artwork is referenced
                 by the final <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{IMAGE_URLS_COLUMN}</code> column,
-                a JSON array of image URLs. The app fetches and reads those images, then verifies them against the row.
+                a JSON array of image references. The app reads those images, then verifies them against the row.
+            </p>
+            <p className="mb-3 text-sm text-slate-500">
+                Each reference is either an <strong>http(s) URL</strong> (fetched by the server) or a <strong>file name</strong>
+                inside a ZIP you upload alongside the CSV (e.g. <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{"[\"24-1-front.jpg\"]"}</code>).
+                Use the ZIP option when the label images live on your machine rather than at a public URL. Names may include
+                a folder path (<code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">labels/24-1.jpg</code>); a bare file
+                name resolves if it is unique in the archive.
             </p>
 
             <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50">

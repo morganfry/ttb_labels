@@ -1,7 +1,9 @@
 /**
  * CSV ingestion for the bulk-verification path. Each row carries the COLA
  * Part I values (the application side) in named columns, plus a final column
- * holding a JSON array of label-image URLs the vision model will transcribe.
+ * holding a JSON array of label-image references the vision model will
+ * transcribe. A reference is either an http(s) URL (fetched server-side) or a
+ * file name inside an uploaded ZIP of images (resolved from memory).
  *
  * This is the CSV analogue of the form parser: it produces {@link ApplicationData}
  * directly from columns instead of from a model read of a PDF form. The label
@@ -14,8 +16,21 @@
  */
 import type { ApplicationData, ProductType, ProductSource } from "./schema";
 
-/** The column that holds the JSON array of label image URLs. */
+/** The column that holds the JSON array of label image references (URLs or ZIP file names). */
 export const IMAGE_URLS_COLUMN = "labelImageUrls";
+
+/** Recognized image extensions for a local (ZIP) file reference. */
+const IMG_EXT_RE = /\.(jpe?g|png|webp|gif)$/i;
+
+/** True for an http(s) URL reference (fetched), false for a local ZIP file name. */
+export function isHttpImageRef(ref: string): boolean {
+    return /^https?:\/\//i.test(ref);
+}
+
+/** True for a local-file reference (resolved from the uploaded image ZIP). */
+export function isLocalImageRef(ref: string): boolean {
+    return !isHttpImageRef(ref);
+}
 
 /** Canonical column order — also drives the on-screen example and sample file. */
 export const CSV_COLUMNS = [
@@ -35,13 +50,14 @@ const REQUIRED_COLUMNS = ["serialNumber", "productType", "source", "brandName", 
 const PRODUCT_TYPES: ProductType[] = ["wine", "distilledSpirits", "maltBeverages"];
 const SOURCES: ProductSource[] = ["domestic", "imported"];
 
-/** One parsed row: either a usable application + image URLs, or an error. */
+/** One parsed row: either a usable application + image references, or an error. */
 export interface CsvRow {
     /** 1-based row number as it appears in the file (excluding the header). */
     rowNumber: number;
     app?: ApplicationData;
-    imageUrls?: string[];
-    /** Set when the row is unusable; app/imageUrls are then undefined. */
+    /** Image references: http(s) URLs and/or file names inside the image ZIP. */
+    imageRefs?: string[];
+    /** Set when the row is unusable; app/imageRefs are then undefined. */
     error?: string;
 }
 
@@ -100,11 +116,11 @@ function parseRow(cells: string[], index: Record<string, number>, rowNumber: num
         if (get(c) === "") return fail(`Missing required value for "${c}".`);
     }
 
-    const imageUrls = parseImageUrls(get(IMAGE_URLS_COLUMN));
-    if (typeof imageUrls === "string") return fail(imageUrls); // error message
-    if (imageUrls.length === 0) return fail(`"${IMAGE_URLS_COLUMN}" must contain at least one image URL.`);
-    if (imageUrls.length > maxImagesPerRow) {
-        return fail(`"${IMAGE_URLS_COLUMN}" has ${imageUrls.length} URLs; the limit is ${maxImagesPerRow} per row.`);
+    const imageRefs = parseImageRefs(get(IMAGE_URLS_COLUMN));
+    if (typeof imageRefs === "string") return fail(imageRefs); // error message
+    if (imageRefs.length === 0) return fail(`"${IMAGE_URLS_COLUMN}" must contain at least one image URL.`);
+    if (imageRefs.length > maxImagesPerRow) {
+        return fail(`"${IMAGE_URLS_COLUMN}" has ${imageRefs.length} images; the limit is ${maxImagesPerRow} per row.`);
     }
 
     const optional = (col: string): string | undefined => {
@@ -122,38 +138,65 @@ function parseRow(cells: string[], index: Record<string, number>, rowNumber: num
         grapeVarietals: optional("grapeVarietals"),
         wineAppellation: optional("wineAppellation"),
     };
-    return { rowNumber, app, imageUrls };
+    return { rowNumber, app, imageRefs };
 }
 
 /**
- * Parse the JSON-array image-URL cell. Returns the URL list on success, or an
- * error string describing what's wrong. A bare single URL (not JSON) is also
- * accepted as a one-element list — a forgiving convenience for hand-edited files.
+ * Validate one image reference. Returns the cleaned reference, or `{error}`
+ * describing why it's rejected. Two accepted shapes:
+ *  - an http(s) URL — fetched server-side (still subject to the SSRF guard).
+ *  - a relative file name — resolved from the uploaded image ZIP.
+ * Anything with a different scheme (ftp:, file:, data:, a Windows drive), an
+ * absolute path, a traversal segment, or no image extension is rejected here so
+ * the user gets feedback at parse time rather than mid-run.
  */
-function parseImageUrls(raw: string): string[] | string {
+function validateImageRef(raw: string): string | { error: string } {
+    const u = raw.trim();
+    if (u === "") return { error: "empty" }; // caller skips empties
+    if (isHttpImageRef(u)) return u;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(u)) {
+        return { error: `Image reference must be an http(s) URL or a ZIP file name: ${truncate(u)}` };
+    }
+    if (u.startsWith("/") || u.includes("\\") || u.split("/").includes("..")) {
+        return { error: `Local image path must be a relative name without "..": ${truncate(u)}` };
+    }
+    if (!IMG_EXT_RE.test(u)) {
+        return { error: `Local image "${truncate(u)}" must end in .jpg, .jpeg, .png, .webp, or .gif` };
+    }
+    return u;
+}
+
+/**
+ * Parse the JSON-array image-reference cell. Returns the reference list on
+ * success, or an error string describing what's wrong. A bare single reference
+ * (not JSON) is also accepted as a one-element list — a forgiving convenience
+ * for hand-edited files.
+ */
+function parseImageRefs(raw: string): string[] | string {
     if (raw === "") return `"${IMAGE_URLS_COLUMN}" is empty.`;
 
     let parsed: unknown;
     try {
         parsed = JSON.parse(raw);
     } catch {
-        // Not JSON: accept a lone http(s) URL as a single-image shorthand.
-        if (/^https?:\/\/\S+$/i.test(raw)) return [raw];
-        return `"${IMAGE_URLS_COLUMN}" must be a JSON array of URLs (e.g. ["https://…"]). Got: ${truncate(raw)}`;
+        // Not JSON: accept a lone URL or ZIP file name as a single-image shorthand.
+        const one = validateImageRef(raw);
+        if (typeof one === "string") return [one];
+        return `"${IMAGE_URLS_COLUMN}" must be a JSON array of image references (URLs or ZIP file names), e.g. ["front.jpg"]. ${one.error}`;
     }
 
     if (typeof parsed === "string") parsed = [parsed];
-    if (!Array.isArray(parsed)) return `"${IMAGE_URLS_COLUMN}" must be a JSON array of URLs.`;
+    if (!Array.isArray(parsed)) return `"${IMAGE_URLS_COLUMN}" must be a JSON array of image references.`;
 
-    const urls: string[] = [];
+    const refs: string[] = [];
     for (const item of parsed) {
         if (typeof item !== "string") return `"${IMAGE_URLS_COLUMN}" contains a non-string entry.`;
-        const u = item.trim();
-        if (u === "") continue;
-        if (!/^https?:\/\//i.test(u)) return `Image URL must be http(s): ${truncate(u)}`;
-        urls.push(u);
+        if (item.trim() === "") continue;
+        const r = validateImageRef(item);
+        if (typeof r !== "string") return r.error;
+        refs.push(r);
     }
-    return urls;
+    return refs;
 }
 
 function truncate(s: string, n = 60): string {

@@ -10,6 +10,7 @@
  */
 import { config } from "./config";
 import type { ExtractionInput, MediaType } from "./extraction";
+import { lookupZipImage, type ZipImageIndex } from "./zipImages";
 
 const EXT_MEDIA_TYPES: Record<string, MediaType> = {
     jpg: "image/jpeg", jpeg: "image/jpeg",
@@ -26,9 +27,32 @@ export class ImageFetchError extends Error {
     }
 }
 
-/** Fetch and encode every URL for one label, in order. */
+/**
+ * Resolve every image reference for one label, in order, into model inputs.
+ * Each reference is either an http(s) URL (fetched) or a file name inside the
+ * uploaded ZIP (read from memory). csvParse has already classified them; this
+ * just dispatches and applies the same size/type bounds to both sources.
+ */
+export function resolveLabelImages(refs: string[], zip?: ZipImageIndex): Promise<ExtractionInput[]> {
+    return Promise.all(refs.map((ref) => resolveOne(ref, zip)));
+}
+
+/** Back-compat alias: URL-only resolution (no ZIP). */
 export function fetchLabelImages(urls: string[]): Promise<ExtractionInput[]> {
-    return Promise.all(urls.map(fetchImage));
+    return resolveLabelImages(urls);
+}
+
+async function resolveOne(ref: string, zip?: ZipImageIndex): Promise<ExtractionInput> {
+    if (/^https?:\/\//i.test(ref)) return fetchImage(ref);
+    // Local reference: must come from the uploaded image ZIP.
+    if (!zip) throw new ImageFetchError(`"${ref}" refers to a local file, but no image ZIP was uploaded.`);
+    const bytes = lookupZipImage(zip, ref);
+    if (!bytes) throw new ImageFetchError(`Image not found in the uploaded ZIP: ${ref}`);
+    const mediaType = resolveMediaType(null, ref);
+    if (!mediaType) throw new ImageFetchError(`Unsupported image type for ${ref} (allowed: ${ALLOWED_MEDIA.join(", ")}).`);
+    if (bytes.byteLength === 0) throw new ImageFetchError(`Image is empty: ${ref}`);
+    if (bytes.byteLength > config.csvImageMaxBytes) throw new ImageFetchError(`Image exceeds ${config.csvImageMaxBytes} bytes: ${ref}`);
+    return { base64: toBase64(bytes), mediaType };
 }
 
 async function fetchImage(url: string): Promise<ExtractionInput> {

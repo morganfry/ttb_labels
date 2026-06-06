@@ -37,7 +37,7 @@ describe("tokenizeCsv", () => {
 });
 
 describe("parseCsv", () => {
-    it("parses a valid row into ApplicationData + imageUrls", () => {
+    it("parses a valid row into ApplicationData + imageRefs", () => {
         const { rows, headerError } = parseCsv(`${HEADER}\n${rowFor()}`);
         expect(headerError).toBeUndefined();
         expect(rows).toHaveLength(1);
@@ -51,7 +51,7 @@ describe("parseCsv", () => {
             applicantNameAddress: "Acme Wines, Napa CA",
             wineAppellation: "Napa Valley",
         });
-        expect(row.imageUrls).toEqual(["https://example.com/front.jpg", "https://example.com/back.jpg"]);
+        expect(row.imageRefs).toEqual(["https://example.com/front.jpg", "https://example.com/back.jpg"]);
     });
 
     it("flags a header missing required columns", () => {
@@ -74,19 +74,40 @@ describe("parseCsv", () => {
         expect(rows[0].error).toMatch(/at least one image URL/);
     });
 
-    it("rejects a malformed image-URL cell", () => {
+    it("rejects a malformed image cell that is neither JSON nor a valid reference", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "not-json" })}`);
-        expect(rows[0].error).toMatch(/JSON array of URLs/);
+        expect(rows[0].error).toMatch(/JSON array of image references/);
     });
 
     it("accepts a bare single URL as a one-element list", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "https://example.com/one.jpg" })}`);
-        expect(rows[0].imageUrls).toEqual(["https://example.com/one.jpg"]);
+        expect(rows[0].imageRefs).toEqual(["https://example.com/one.jpg"]);
     });
 
-    it("rejects non-http image URLs", () => {
+    it("accepts local image file names (resolved later from the ZIP)", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["front.jpg","labels/24-1-back.png"]' })}`);
+        expect(rows[0].error).toBeUndefined();
+        expect(rows[0].imageRefs).toEqual(["front.jpg", "labels/24-1-back.png"]);
+    });
+
+    it("accepts a bare single local file name", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "front.webp" })}`);
+        expect(rows[0].imageRefs).toEqual(["front.webp"]);
+    });
+
+    it("rejects non-http URL schemes", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["ftp://example.com/x.jpg"]' })}`);
         expect(rows[0].error).toMatch(/http\(s\)/);
+    });
+
+    it("rejects a local path that escapes with ..", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["../secret.jpg"]' })}`);
+        expect(rows[0].error).toMatch(/relative name/);
+    });
+
+    it("rejects a local file with no image extension", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["front.txt"]' })}`);
+        expect(rows[0].error).toMatch(/\.jpg/);
     });
 
     it("enforces the per-row image cap", () => {

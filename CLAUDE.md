@@ -17,9 +17,12 @@ README.md; for file locations see the architecture section there.
 - **Two ingestion paths, one judge.** PDF intake (orchestration.ts) and CSV
   intake (csvOrchestration.ts) converge on the SAME label extraction, matchers,
   persistence, and streaming. CSV replaces only the *form* read with explicit
-  columns; the label is still model-read from fetched image URLs. Both run
-  through `runPool` (orchestration.ts) — keep the worker pool shared, not forked.
-  Don't let the CSV path acquire its own matching or persistence logic.
+  columns; the label is still model-read from images resolved per row — http(s)
+  URLs (fetched) or file names in an uploaded ZIP (read from an in-memory index;
+  see zipImages.ts). Both run through `runPool` (orchestration.ts) — keep the
+  worker pool shared, not forked. Don't let the CSV path acquire its own matching
+  or persistence logic, and route both image sources through resolveLabelImages
+  (imageFetch.ts), not a second code path.
 - **Three homes for constants, kept separate on purpose:**
     - Domain rules (matcher thresholds, tolerances, the warning text) → schema.ts
     - Operational knobs (model, maxTokens, concurrency, pageSize, the CSV
@@ -51,9 +54,16 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   flags for review by design.
 - CSV image fetch (imageFetch.ts) has a BEST-EFFORT SSRF guard only (http(s)
   only; loopback/link-local/RFC-1918 rejected) — not DNS-rebinding-proof.
-  Production needs an allow-list or egress proxy. Don't widen it silently.
+  Production needs an allow-list or egress proxy. Don't widen it silently. The
+  ZIP image option sidesteps fetching entirely (preferred in locked-down nets).
+- CSV image ZIP (zipImages.ts) is decompressed WHOLE into memory on both server
+  and client; bounded only by csvImageZipMaxBytes (compressed), NOT a
+  decompressed-size budget — so it's not zip-bomb-hardened. Don't raise the cap
+  or drop it without adding a real per-entry/total decompressed limit.
 - CSV rows that fail validation become pre-failed work items (preError) so they
-  surface in the stream and summary instead of being dropped. Keep that.
+  surface in the stream and summary instead of being dropped. Keep that. (Rows
+  whose local image refs aren't in the ZIP fail per-row at resolve time, and the
+  client pre-flights them in the preview before the run.)
 
 ## Verify before trusting (things that may be stale)
 - DEFAULT_MODEL / config.model is a placeholder — confirm it's a current,
@@ -69,6 +79,11 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
 - CSV columns mirror ApplicationData; the canonical list + validation live in
   csvParse.ts (CSV_COLUMNS). A new application field → add it there AND to the
   UI guide (CsvVerify.tsx COLUMN_NOTES / SAMPLE_CSV), kept in sync.
+- labelImageUrls entries are image *references*, not just URLs: an http(s) URL
+  OR a relative file name resolved from the uploaded ZIP. Per-entry validation
+  (scheme/extension/traversal) lives in csvParse.ts validateImageRef; the
+  url-vs-local split is isLocalImageRef. Keep that classification in csvParse so
+  both the client preview and server resolve agree.
 - parseLabel accepts one ExtractionInput or an array (multi-view labels); the
   array is sent as multiple content blocks in ONE model call, not N calls.
 - New matcher → matching.ts; pure helpers → textNormalize.ts / unitParse.ts.
@@ -95,7 +110,7 @@ Form 5100.31). An agent uploads one or more combined application PDFs; the app
 extracts the label fields and the form's Part I data, checks them against TTB
 requirements, and returns a per-field pass / review / fail verdict in a
 searchable table. Two intake modes: combined PDFs, or a CSV of application data
-with label-image URLs for bulk runs.
+whose label images are given by URL or by file name in an uploaded ZIP, for bulk runs.
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
@@ -106,8 +121,9 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 - Upload — drag-and-drop or browse, single or bulk; combined application PDFs
   (a filled COLA form with the label artwork affixed).
 - CSV bulk — one application per row: COLA Part I fields as columns + a final
-  labelImageUrls column (JSON array of image URLs). The app fetches and reads
-  those images, then verifies against the row. The tab shows the format, an
+  labelImageUrls column (JSON array of image references — http(s) URLs and/or
+  names of files in an optional uploaded ZIP). The app reads those images, then
+  verifies against the row. The tab shows the format, an
   example, and a downloadable template.
 - Pre-flight detection — each PDF is checked for a filled Part I and an affixed
   label before processing; ambiguous documents are flagged for review with an

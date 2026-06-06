@@ -11,18 +11,20 @@
  * fetched images.
  */
 import { runPool, type ItemOutcome, type BatchErrorInfo, type BatchSummary, type PoolOptions } from "./orchestration";
-import { fetchLabelImages, ImageFetchError } from "./imageFetch";
+import { resolveLabelImages, ImageFetchError } from "./imageFetch";
 import { parseLabel } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError } from "./extraction";
 import type { ApplicationData, Confidence, VerificationResult } from "./schema";
+import type { ZipImageIndex } from "./zipImages";
 
-/** One CSV row of work: application data (from columns) + label image URLs. */
+/** One CSV row of work: application data (from columns) + label image references. */
 export interface CsvWorkItem {
     id: string;
     name: string;
     app: ApplicationData;
-    imageUrls: string[];
+    /** http(s) URLs and/or file names inside {@link CsvBatchOptions.zipImages}. */
+    imageRefs: string[];
     /** Pre-set failure for a row that failed CSV parsing; short-circuits work. */
     preError?: BatchErrorInfo;
 }
@@ -32,7 +34,10 @@ export interface CsvBatchOptions extends PoolOptions {
     model?: string;
     /** Injection seam for tests; defaults to the real model-backed parser. */
     parseLabel?: typeof parseLabel;
-    fetchImages?: typeof fetchLabelImages;
+    /** Injection seam for tests; defaults to the real URL/ZIP resolver. */
+    resolveImages?: typeof resolveLabelImages;
+    /** In-memory index of an uploaded image ZIP, for local-file references. */
+    zipImages?: ZipImageIndex;
 }
 
 /** Process all rows, streaming each result. Resolves with the batch summary. */
@@ -57,12 +62,12 @@ async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<
     // A row that failed CSV validation arrives pre-failed — surface it as-is.
     if (item.preError) return fail(item.preError);
 
-    const fetchImages = opts.fetchImages ?? fetchLabelImages;
+    const resolveImages = opts.resolveImages ?? resolveLabelImages;
     const label = opts.parseLabel ?? parseLabel;
 
     let inputs;
     try {
-        inputs = await fetchImages(item.imageUrls);
+        inputs = await resolveImages(item.imageRefs, opts.zipImages);
     } catch (e) {
         const retryable = e instanceof ImageFetchError && /timed out|\b5\d\d\b/i.test(e.message);
         return fail({ kind: "extraction", stage: "label", message: `Image fetch failed: ${msg(e)}`, retryable });

@@ -1,14 +1,16 @@
 /**
  * POST /api/verify-csv — bulk-verify applications from a CSV upload.
  *
- * Accepts multipart form data with a single `csv` file. Each row supplies the
- * COLA Part I values in named columns plus a JSON array of label-image URLs;
- * the server fetches and transcribes the images, matches them against the row,
- * and streams one NDJSON line per finished row — the same wire format as
- * /api/verify, so the client renders both paths identically.
+ * Accepts multipart form data with a `csv` file and an optional `images` ZIP.
+ * Each row supplies the COLA Part I values in named columns plus a JSON array
+ * of label-image references — http(s) URLs (fetched) and/or file names inside
+ * the ZIP (read from memory). The server transcribes the images, matches them
+ * against the row, and streams one NDJSON line per finished row — the same wire
+ * format as /api/verify, so the client renders both paths identically.
  */
 import { processCsvBatch, type CsvWorkItem } from "@/lib/csvOrchestration";
 import { parseCsv } from "@/lib/csvParse";
+import { indexZipImages, type ZipImageIndex } from "@/lib/zipImages";
 import { saveResult, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 import type { ItemOutcome } from "@/lib/orchestration";
@@ -31,19 +33,35 @@ export async function POST(req: Request): Promise<Response> {
     if (headerError) return json({ error: headerError }, 400);
     if (rows.length === 0) return json({ error: "The CSV has no data rows." }, 400);
 
+    // Optional ZIP of label images, for rows that reference files by name rather
+    // than URL. Indexed once into memory; the per-image size/type bounds still
+    // apply when each entry is resolved.
+    let zipImages: ZipImageIndex | undefined;
+    const imagesFile = form.get("images");
+    if (imagesFile instanceof File && imagesFile.size > 0) {
+        if (imagesFile.size > config.csvImageZipMaxBytes) {
+            return json({ error: `Image ZIP exceeds the ${config.csvImageZipMaxBytes}-byte limit.` }, 400);
+        }
+        try {
+            zipImages = indexZipImages(new Uint8Array(await imagesFile.arrayBuffer()));
+        } catch (e) {
+            return json({ error: `Could not read the image ZIP: ${e instanceof Error ? e.message : String(e)}` }, 400);
+        }
+    }
+
     // Build work items. Rows that failed validation become pre-failed items so
     // they still appear in the stream and the summary counts, rather than being
     // silently dropped.
     const items: CsvWorkItem[] = rows.map((row) => {
         const id = `row-${row.rowNumber}`;
         const name = row.app?.serialNumber || `Row ${row.rowNumber}`;
-        if (row.error || !row.app || !row.imageUrls) {
+        if (row.error || !row.app || !row.imageRefs) {
             return {
-                id, name, app: row.app!, imageUrls: row.imageUrls ?? [],
+                id, name, app: row.app!, imageRefs: row.imageRefs ?? [],
                 preError: { kind: "unknown", stage: "match", message: row.error ?? "Invalid row.", retryable: false },
             };
         }
-        return { id, name, app: row.app, imageUrls: row.imageUrls };
+        return { id, name, app: row.app, imageRefs: row.imageRefs };
     });
 
     const encoder = new TextEncoder();
@@ -60,6 +78,7 @@ export async function POST(req: Request): Promise<Response> {
                 const summary = await processCsvBatch(items, {
                     signal: abort.signal,
                     persist: saveResult,
+                    zipImages,
                     onResult: (o: ItemOutcome) => write({ type: "result", ...o }),
                     onProgress: (done, total) => write({ type: "progress", done, total }),
                 });

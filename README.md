@@ -1,6 +1,6 @@
 # TTB Label Verification — Prototype
 
-An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads one or more combined application PDFs; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted two ways: as combined PDFs, or — for bulk runs — as a CSV of application data with label-image URLs.
+An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads one or more combined application PDFs; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted two ways: as combined PDFs, or — for bulk runs — as a CSV of application data whose label images are given by URL or by file name in an uploaded ZIP.
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
@@ -8,9 +8,9 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Features
 
-- **Two ingestion modes** — the Verify screen has a **PDF upload** tab and a **CSV bulk** tab. PDF mode reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image URLs. Both feed the identical matching, persistence, and results pipeline.
+- **Two ingestion modes** — the Verify screen has a **PDF upload** tab and a **CSV bulk** tab. PDF mode reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or files in an uploaded ZIP). Both feed the identical matching, persistence, and results pipeline.
 - **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed). ZIP archives are accepted at the intake (server-side expansion; see limitations).
-- **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of label-image URLs. The app fetches and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, and a downloadable template.
+- **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of image references. Each reference is either an http(s) URL or the name of a file inside an optional ZIP of label images uploaded alongside the CSV — so artwork on disk can be verified without hosting it. The app reads and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of local files against the ZIP, and a downloadable template.
 - **Pre-flight detection** — before any processing, each PDF is inspected to confirm it contains both a filled Part I and an affixed label. Documents missing a piece, or read with low confidence, are flagged for review with a plain-language reason and an explicit "Process anyway" override.
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
 - **Verification** — deterministic matching checks each field with the logic appropriate to it: tolerant matching for names, numeric tolerance for alcohol content and net contents, strict exact matching for the government warning.
@@ -48,13 +48,15 @@ The app has two screens, linked by the top navigation: **Verify** (review new ap
 
 ### Bulk verification by CSV
 
-Switch to the **CSV bulk** tab on the Verify screen when you already have the application data in a spreadsheet and the label artwork hosted somewhere reachable.
+Switch to the **CSV bulk** tab on the Verify screen when you already have the application data in a spreadsheet and the label artwork hosted at a URL or saved locally.
 
-1. **Prepare the CSV.** One application per row. The COLA Part I fields are columns; the final `labelImageUrls` column is a JSON array of label-image URLs. The tab shows the full column list with notes, a worked example, and a **Download template** button. Required columns: `serialNumber`, `productType` (`wine` / `distilledSpirits` / `maltBeverages`), `source` (`domestic` / `imported`), `brandName`, `applicantNameAddress`, and `labelImageUrls`. Multiple URLs in one row are treated as several views (front / back / neck) of a single label.
+1. **Prepare the CSV.** One application per row. The COLA Part I fields are columns; the final `labelImageUrls` column is a JSON array of image references — each either an http(s) URL or the name of a file inside the image ZIP (a folder path like `labels/24-1.jpg` works; a bare file name resolves if it is unique in the archive). The tab shows the full column list with notes, a worked example, and a **Download template** button. Required columns: `serialNumber`, `productType` (`wine` / `distilledSpirits` / `maltBeverages`), `source` (`domestic` / `imported`), `brandName`, `applicantNameAddress`, and `labelImageUrls`. Multiple references in one row are treated as several views (front / back / neck) of a single label.
 
-2. **Upload it.** Drag the CSV in or browse to it. The app parses it immediately and shows how many rows are valid and lists any rows with errors (a bad product type, a malformed URL array, a missing required value). Bad rows don't block the others — they're reported, not verified.
+2. **Upload it.** Drag the CSV in or browse to it. The app parses it immediately and shows how many rows are valid and lists any rows with errors (a bad product type, a malformed reference array, a missing required value). Bad rows don't block the others — they're reported, not verified.
 
-3. **Verify.** Click **Verify N rows**. As with PDFs, results stream into the same table row by row, with the same per-field verdicts and expandable detail. Rows whose images couldn't be fetched or read are listed separately with the reason.
+3. **(If using local files) attach the image ZIP.** When any row references files by name, an uploader appears for a ZIP of those images. The app reads the archive in the browser and flags any referenced file that isn't in it, before you run. URL-only batches can skip this.
+
+4. **Verify.** Click **Verify N rows**. As with PDFs, results stream into the same table row by row, with the same per-field verdicts and expandable detail. Rows whose images couldn't be fetched, found in the ZIP, or read are listed separately with the reason.
 
 ### Searching past reviews
 
@@ -103,7 +105,7 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 
 **API routes (Node runtime).**
 - `POST /api/verify` — accepts the uploaded PDFs as multipart form data, runs the batch, and streams results back as newline-delimited JSON (NDJSON), one line per finished application.
-- `POST /api/verify-csv` — accepts a CSV file as multipart form data, parses it to per-row application data + image URLs, and streams results in the same NDJSON format (so the client renders both paths identically). Invalid rows are reported in the stream rather than dropped.
+- `POST /api/verify-csv` — accepts a CSV file (and an optional `images` ZIP) as multipart form data, parses it to per-row application data + image references, indexes the ZIP into memory, and streams results in the same NDJSON format (so the client renders both paths identically). Invalid rows are reported in the stream rather than dropped.
 - `GET /api/search` — queries stored verdicts with combinable filters and pagination.
 - `GET /api/results/[id]` — fetches one full result (summary + all field rows) for the detail view.
 
@@ -114,8 +116,9 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 - `detect-regions.ts` — structural region detection (server-side).
 - `extraction.ts` — one shared vision-model integration; model is a per-call parameter. Accepts one image or several to transcribe together as a single subject.
 - `parsers.ts` — the label and form parsers (prompt + validator pairs); `parseLabel` takes one image or an array (the CSV path's multi-view labels).
-- `csvParse.ts` — pure CSV tokenizer + per-row validation → application data + image URLs (reused on the client for the pre-submit preview).
-- `imageFetch.ts` — fetches label images by URL into model inputs, with size / timeout caps and a best-effort SSRF guard.
+- `csvParse.ts` — pure CSV tokenizer + per-row validation → application data + image references (URLs or ZIP file names; reused on the client for the pre-submit preview).
+- `imageFetch.ts` — resolves label-image references into model inputs: http(s) URLs are fetched (size / timeout caps + a best-effort SSRF guard), ZIP file names are read from the in-memory archive index.
+- `zipImages.ts` — pure: expands an uploaded image ZIP into a path/basename → bytes index, shared by the server (resolve) and the client (pre-flight cross-check).
 - `matching.ts` — the three matchers + the dispatcher.
 - `orchestration.ts` — `runPool`, the concurrency-capped streaming worker pool, plus the PDF per-item pipeline.
 - `csvOrchestration.ts` — the CSV per-item pipeline (fetch images → transcribe → match → persist), run through the same `runPool`.
@@ -205,9 +208,10 @@ DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
 PGSSLMODE=require        # only if your Postgres requires TLS (managed providers)
 MODEL=claude-...         # optional model override (default in lib/config.ts)
 BATCH_CONCURRENCY=6      # optional concurrency override
-CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for CSV label fetches (default 12 MiB)
-CSV_IMAGE_FETCH_TIMEOUT_MS=15000 # optional; per-image fetch timeout for the CSV path
-CSV_MAX_IMAGES_PER_ROW=6         # optional; max label image URLs per CSV row
+CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for CSV labels (URL or ZIP; default 12 MiB)
+CSV_IMAGE_FETCH_TIMEOUT_MS=15000 # optional; per-image fetch timeout for the CSV URL path
+CSV_MAX_IMAGES_PER_ROW=6         # optional; max label image references per CSV row
+CSV_IMAGE_ZIP_MAX_BYTES=104857600 # optional; max uploaded image-ZIP size (default 100 MiB)
 ```
 `.env.local` is gitignored and read only in local development.
 
@@ -231,7 +235,7 @@ The schema is created on the first request (idempotent migration). If a reverse 
 ## Assumptions
 
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
-- For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image URLs are reachable from the server and point at the label artwork for that application.
+- For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image references resolve to that application's label artwork: either http(s) URLs reachable from the server, or files present in the uploaded image ZIP.
 - The canonical government-warning text used for the strict check is the standard 27 CFR 16.21 wording. **Verify this string against the current regulation before any real use** — the strict matcher is only as correct as that constant.
 - Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default is used, but in production this should gate to human confirmation, since it controls the whole comparison profile.
 - The reviewing agent makes the final call. Every "review" outcome and detection flag is an invitation for human judgment, not an automated rejection.
@@ -245,11 +249,12 @@ The schema is created on the first request (idempotent migration). If a reverse 
 - **Net-contents parsing is not exhaustive.** Common units (mL, cL, L, fl oz) are handled; compound US statements like "1 PINT 9 FL OZ" are not yet parsed and would flag for review.
 - **Detection is heuristic.** Region detection uses structural signals (template markers, embedded images), not full extraction. A form flattened into a single image has no text layer and is treated as low-confidence rather than assumed valid. Production would use a dedicated text extractor for higher reliability.
 - **Cloud model vs. network policy.** The prototype calls a hosted model API. In a restricted federal network this traffic may be blocked; production deployment would need the endpoint allow-listed or an in-network model. This is the single most likely thing to break a real deployment.
-- **CSV image fetching is server-side and only lightly guarded.** The CSV path fetches arbitrary URLs from the server. There is a best-effort SSRF guard (http(s) only; loopback, link-local, and RFC-1918 hosts rejected) and size/timeout caps, but it is not DNS-rebinding-proof. A production deployment should front it with an allow-list or an egress proxy. Net-contents and ABV still come from the label image, not the CSV, so a CSV row can't assert compliance values directly.
-- **ZIP archives are not expanded in the browser build.** Bulk ZIP support is a server-side addition; the current build asks the user to extract PDFs first.
+- **CSV image fetching is server-side and only lightly guarded.** When a row references images by URL, the server fetches arbitrary URLs. There is a best-effort SSRF guard (http(s) only; loopback, link-local, and RFC-1918 hosts rejected) and size/timeout caps, but it is not DNS-rebinding-proof. A production deployment should front it with an allow-list or an egress proxy. The ZIP option avoids outbound fetches entirely and is the safer choice in a locked-down network. Net-contents and ABV still come from the label image, not the CSV, so a CSV row can't assert compliance values directly.
+- **The CSV image ZIP is fully decompressed in memory.** Both the server (resolve) and the client (pre-flight cross-check) expand the whole archive, bounded only by a blunt compressed-size cap (`CSV_IMAGE_ZIP_MAX_BYTES`) — not a decompressed-size budget, so it is not hardened against a crafted "zip bomb." Production should stream-extract with a hard per-entry and total decompressed limit.
+- **PDF-tab ZIP archives are not expanded in the browser build.** The ZIP support added for CSV label images does not cover the PDF tab; that tab still asks the user to extract combined PDFs first.
 - **Long batches need a streaming-friendly proxy.** Processing runs in one streaming request. A long-running Node server has no function timeout, so large batches complete fine — but any reverse proxy in front must have response buffering disabled (the route sets `X-Accel-Buffering: no` for nginx) or results won't stream incrementally.
 - **No COLA integration.** By design. Results inform a potential future workflow; they are not written back to any system of record.
 
 ### Data and retention
 
-The prototype stores extracted text and verdicts only. Uploaded PDFs and label images — including images fetched from CSV URLs — are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. CSV image URLs themselves are not persisted. A production system would need an explicit retention policy and the corresponding federal compliance review.
+The prototype stores extracted text and verdicts only. Uploaded PDFs and label images — including images fetched from CSV URLs and images read from an uploaded image ZIP — are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. CSV image references (URLs and ZIP file names) are not persisted. A production system would need an explicit retention policy and the corresponding federal compliance review.
