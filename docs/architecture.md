@@ -135,7 +135,7 @@ Reading aids:
 
 ## 3. Verification sequence (one PDF application)
 
-The runtime view C4 doesn't capture: detect → slice → transcribe (two models,
+The runtime view: detect → slice → transcribe (two models,
 concurrently) → judge → persist → stream, with results flowing back per item
 rather than after the whole batch (the per-label latency requirement).
 
@@ -184,7 +184,7 @@ streaming, and the shared `runPool` are identical.
 
 ---
 
-## Why these choices (one line each)
+## Why these choices
 
 - **One vision model, not OCR-then-parse** — fewer moving parts; the model reads
   degraded artwork better than a brittle OCR pipeline.
