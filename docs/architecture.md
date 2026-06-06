@@ -59,6 +59,7 @@ label images are resolved from URLs/ZIP instead of sliced from a PDF. From
 matching onward the two paths are identical.
 
 ```mermaid
+%%{init: {'flowchart': {'rankSpacing': 90, 'nodeSpacing': 40}}}%%
 flowchart TB
     subgraph browser["Browser — React / Next.js client"]
         tabs["HomeTabs (PDF / CSV tabs)"]
