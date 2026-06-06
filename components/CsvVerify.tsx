@@ -7,6 +7,7 @@ import { OVERALL_META } from "@/lib/uiTypes";
 import { parseCsv, isLocalImageRef, CSV_COLUMNS, IMAGE_URLS_COLUMN, type CsvRow } from "@/lib/csvParse";
 import { indexZipImages, zipHasImage, type ZipImageIndex } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
+import { useRegisterProcessing } from "./ProcessingGuard";
 
 /** Client-side ZIP size guard (MB); the server enforces the authoritative cap. */
 const ZIP_MAX_MB = 100;
@@ -73,6 +74,7 @@ export default function CsvVerify() {
     const [processing, setProcessing] = useState(false);
     const [processError, setProcessError] = useState<string | null>(null);
     const [dragging, setDragging] = useState(false);
+    useRegisterProcessing(processing); // warn on navigation while a run is active
     const inputRef = useRef<HTMLInputElement>(null);
     const zipInputRef = useRef<HTMLInputElement>(null);
 

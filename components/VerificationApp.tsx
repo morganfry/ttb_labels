@@ -8,11 +8,13 @@ import { detectOne } from "@/lib/detectClient";
 import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
 import { ResultsTable } from "./ResultsTable";
+import { useRegisterProcessing } from "./ProcessingGuard";
 
 export default function VerificationApp() {
     const [items, setItems] = useState<Item[]>([]);
     const [processing, setProcessing] = useState(false);
     const [processError, setProcessError] = useState<string | null>(null);
+    useRegisterProcessing(processing); // warn on navigation while a run is active
 
     const addFiles = useCallback((fileList: FileList) => {
         const incoming: Item[] = [];

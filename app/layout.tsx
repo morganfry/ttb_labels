@@ -1,5 +1,6 @@
 import "./globals.css";
 import NavBar from "@/components/NavBar";
+import { ProcessingProvider } from "@/components/ProcessingGuard";
 
 export const metadata = {
     title: "TTB Label Verification",
@@ -10,8 +11,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
         <html lang="en">
         <body>
-        <NavBar />
-        {children}
+        <ProcessingProvider>
+            <NavBar />
+            {children}
+        </ProcessingProvider>
         </body>
         </html>
     );

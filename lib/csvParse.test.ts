@@ -64,6 +64,12 @@ describe("parseCsv", () => {
         expect(rows[0].error).toMatch(/Invalid productType/);
     });
 
+    it("accepts the singular 'maltBeverage' alias, mapping it to maltBeverages", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ productType: "maltBeverage" })}`);
+        expect(rows[0].error).toBeUndefined();
+        expect(rows[0].app?.productType).toBe("maltBeverages");
+    });
+
     it("rejects an invalid source", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor({ source: "local" })}`);
         expect(rows[0].error).toMatch(/Invalid source/);

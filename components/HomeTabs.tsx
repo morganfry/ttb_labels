@@ -34,7 +34,10 @@ export default function HomeTabs() {
                     ))}
                 </div>
 
-                {mode === "pdf" ? <VerificationApp /> : <CsvVerify />}
+                {/* Both tabs stay mounted (toggled with `hidden`) so switching
+                    between PDF and CSV preserves each tab's files and results. */}
+                <div className={mode === "pdf" ? "" : "hidden"}><VerificationApp /></div>
+                <div className={mode === "csv" ? "" : "hidden"}><CsvVerify /></div>
             </div>
         </div>
     );
