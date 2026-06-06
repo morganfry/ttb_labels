@@ -59,7 +59,8 @@ label images are resolved from URLs/ZIP instead of sliced from a PDF. From
 matching onward the two paths are identical.
 
 ```mermaid
-flowchart TB
+%%{init: {'flowchart': {'rankSpacing': 50, 'nodeSpacing': 60}}}%%
+flowchart LR
     subgraph browser["Browser — React / Next.js client"]
         tabs["HomeTabs (PDF / CSV tabs)"]
         pdfui["VerificationApp"]
