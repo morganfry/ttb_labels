@@ -136,9 +136,9 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
   names of files in an optional uploaded ZIP). The app reads those images, then
   verifies against the row. The tab shows the format, an
   example, and a downloadable template.
-- Pre-flight detection — each PDF is checked for a filled Part I and an affixed
-  label before processing; ambiguous documents are flagged for review with an
-  explicit "Process anyway" override.
+- Pre-flight detection — each PDF is checked in the browser for a filled Part I
+  and an affixed label; ambiguous documents are flagged for review with an
+  explicit "Process anyway" override. Advisory only — not a server-side gate.
 - Field extraction — a vision model transcribes label and form fields with a
   per-field confidence rating.
 - Verification — deterministic matching: tolerant for names, numeric tolerance
@@ -152,10 +152,11 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Architecture
 
-Request flow (one PDF application): detect regions → slice form to page 1 and
-label to its artwork pages → extract label + form concurrently (two prompts,
-one shared integration, per-side model tiers) → deterministic, confidence-gated
-matching → persist (text + verdicts only) → stream result.
+Request flow (one PDF application): (advisory region detection runs in the
+browser pre-upload) → slice form to page 1 and label to its artwork pages →
+extract label + form concurrently (two prompts, one shared integration, per-side
+model tiers) → deterministic, confidence-gated matching → persist (text +
+verdicts only) → stream result.
 CSV path: same pipeline with the front swapped — application data from columns,
 label images fetched from URLs and transcribed; matching onward is identical
 and shares the same worker pool.
@@ -271,7 +272,11 @@ sets `X-Accel-Buffering: no` for nginx).
 - Net-contents parsing handles mL/cL/L/fl oz; compound US statements
   ("1 PINT 9 FL OZ") flag for review.
 - Detection is heuristic (template markers + embedded images), not full
-  extraction; a flattened-image form is treated as low-confidence.
+  extraction; a flattened-image form is treated as low-confidence. It runs
+  CLIENT-SIDE only and is advisory — not a server-side gate. Correctness is
+  enforced downstream by the confidence-gated matcher, so a misdetect can't
+  become a confident false pass. (Server re-validation was intentionally
+  dropped; the matcher is the real guarantee.)
 - The model API is a cloud call; in a restricted network it may need
   allow-listing or an in-network model.
 - CSV image fetching is server-side with only a best-effort SSRF guard (http(s)

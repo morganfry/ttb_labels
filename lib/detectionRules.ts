@@ -1,10 +1,9 @@
 /**
- * Pure region-detection heuristic — the single source of truth for "does this
- * document look like a filled COLA form with an affixed label?". It operates
- * on already-extracted SIGNALS (text + image count), never on a file or any
- * I/O, so the identical rules run in both the browser and on the server. The
- * runtime-specific work (reading those signals from a File vs. a PDF buffer)
- * lives in the thin adapters detectClient.ts and detectRegions.ts.
+ * Pure region-detection heuristic — "does this document look like a filled COLA
+ * form with an affixed label?". It operates on already-extracted SIGNALS (text +
+ * image count), never on a file or any I/O, so it stays framework-free and
+ * unit-testable. The runtime-specific work (reading those signals from a File in
+ * the browser) lives in the thin adapter detectClient.ts.
  */
 
 export type DetectConfidence = "high" | "low";

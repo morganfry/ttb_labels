@@ -221,10 +221,3 @@ function classifyExtraction(err: unknown, stage: "label" | "form"): BatchErrorIn
 function msg(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
-
-/** Re-run only the items whose prior failure was marked retryable. */
-export async function retryFailed(items: WorkItem[], priorOutcomes: ItemOutcome[], opts: BatchOptions): Promise<BatchSummary> {
-    const retryIds = new Set(priorOutcomes.filter((o) => !o.ok && o.error.retryable).map((o) => o.id));
-    const subset = items.filter((it) => retryIds.has(it.id));
-    return processBatch(subset, opts);
-}

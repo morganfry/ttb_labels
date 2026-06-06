@@ -14,12 +14,6 @@ export type ProductType = "wine" | "distilledSpirits" | "maltBeverages";
 /** Domestic vs. imported (COLA form item 3); drives the origin requirement. */
 export type ProductSource = "domestic" | "imported";
 
-export const PRODUCT_TYPE_LABELS: Record<ProductType, string> = {
-    wine: "Wine",
-    distilledSpirits: "Distilled Spirits",
-    maltBeverages: "Malt Beverages",
-};
-
 /**
  * The application side of every comparison — values taken from the COLA
  * form's Part I. Field names track the form item numbers for traceability.

@@ -1,10 +1,12 @@
 /**
- * Client-side detection adapter — fast pre-upload feedback so the agent sees
- * Form/Label chips immediately, no round trip. It reads signals from a File in
- * the browser, then delegates the verdict to the SAME {@link evaluateRegions}
- * rules the server uses. The server re-validates authoritatively at process
- * time (see detectRegions.ts / the verify route); this is the convenience
- * layer, not the trust boundary.
+ * Client-side detection — fast pre-upload feedback so the agent sees Form/Label
+ * chips immediately, no round trip. It reads signals from a File in the browser
+ * and applies the shared {@link evaluateRegions} rules.
+ *
+ * This is an ADVISORY pre-flight only: it drives the queue's "needs review /
+ * Process anyway" UX, but does not gate processing. Correctness is enforced
+ * downstream by the confidence-gated matcher (matching.ts), so a misdetected
+ * document still resolves safely (low-confidence reads route to review).
  */
 import {
     evaluateRegions, IMAGE_XOBJECT_RE, TEXT_LAYER_RE,

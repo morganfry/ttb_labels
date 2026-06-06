@@ -37,11 +37,6 @@ export function resolveLabelImages(refs: string[], zip?: ZipImageIndex): Promise
     return Promise.all(refs.map((ref) => resolveOne(ref, zip)));
 }
 
-/** Back-compat alias: URL-only resolution (no ZIP). */
-export function fetchLabelImages(urls: string[]): Promise<ExtractionInput[]> {
-    return resolveLabelImages(urls);
-}
-
 async function resolveOne(ref: string, zip?: ZipImageIndex): Promise<ExtractionInput> {
     if (/^https?:\/\//i.test(ref)) return fetchImage(ref);
     // Local reference: must come from the uploaded image ZIP.

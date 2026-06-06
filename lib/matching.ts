@@ -14,11 +14,11 @@ import {
     type ApplicationData, type ProductType, type Confidence,
     type FieldResult, type FieldStatus, type VerificationResult,
 } from "./schema";
-import { normalize, collapseSpaces, similarity } from "./textNormalize";
+import { collapseSpaces, similarity } from "./textNormalize";
 import { parsePercent, parseVolumeMl } from "./unitParse";
 
 // Re-export so importers/tests that pulled these from ./matching still work.
-export { normalize, collapseSpaces, similarity } from "./textNormalize";
+export { normalize, similarity } from "./textNormalize";
 export { parsePercent, parseVolumeMl } from "./unitParse";
 
 interface TolerantArgs {
