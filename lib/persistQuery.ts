@@ -19,7 +19,7 @@ export interface SearchPage {
 export async function search(q: SearchQuery): Promise<SearchPage> {
     const where: string[] = [];
     const args: (string | number)[] = [];
-    const p = () => `${args.length + 1}`;
+    const p = () => `$${args.length + 1}`;
     if (q.serialNumber) { where.push(`serial_number = ${p()}`); args.push(q.serialNumber); }
     if (q.brand)        { where.push(`brand_name ILIKE ${p()}`); args.push(`%${q.brand}%`); }
     if (q.overall)      { where.push(`overall = ${p()}`); args.push(q.overall); }
@@ -36,7 +36,7 @@ export async function search(q: SearchQuery): Promise<SearchPage> {
     const res = await sql.query(
         `SELECT id, serial_number, product_type, overall, brand_name, created_at
      FROM verification ${clause} ORDER BY created_at DESC
-     LIMIT ${args.length + 1} OFFSET ${args.length + 2}`,
+     LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
         [...args, limit, offset],
     );
     return { rows: res.rows.map(rowToSummary), total, limit, offset };

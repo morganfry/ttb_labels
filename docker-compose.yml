@@ -22,6 +22,10 @@ services:
       - .env.local
     environment:
       DATABASE_URL: postgres://app:app@db:5432/labels
+      # The bundled Postgres speaks no TLS, so never force SSL for the in-network
+      # db — this overrides any PGSSLMODE inherited from .env.local (which is
+      # meant for a managed/production Postgres, not this compose stack).
+      PGSSLMODE: ""
     depends_on:
       db:
         condition: service_healthy
