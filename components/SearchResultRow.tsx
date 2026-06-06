@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2, FileText } from "lucide-react";
 import type { Summary } from "@/lib/searchTypes";
 import { PRODUCT_LABELS, formatDate } from "@/lib/searchTypes";
@@ -7,25 +8,20 @@ import { FieldCards } from "./FieldCards";
 
 export function SearchResultRow({ row }: { row: Summary }) {
     const [open, setOpen] = useState(false);
-    const [detail, setDetail] = useState<any | null>(null);
-    const [loadingDetail, setLoadingDetail] = useState(false);
-    const [detailError, setDetailError] = useState<string | null>(null);
 
-    const toggle = async () => {
-        const next = !open;
-        setOpen(next);
-        if (next && !detail) {
-            setLoadingDetail(true);
-            setDetailError(null);
-            try {
-                const res = await fetch(`/api/results/${encodeURIComponent(row.id)}`);
-                if (!res.ok) throw new Error(`Server returned ${res.status}`);
-                setDetail(await res.json());
-            } catch (e) {
-                setDetailError(e instanceof Error ? e.message : "Failed to load details.");
-            } finally { setLoadingDetail(false); }
-        }
-    };
+    // Detail loads only when the row is expanded; cached afterward, so collapsing
+    // and re-expanding doesn't re-fetch.
+    const { data: detail, isLoading: loadingDetail, error: detailError } = useQuery({
+        queryKey: ["result", row.id],
+        enabled: open,
+        queryFn: async () => {
+            const res = await fetch(`/api/results/${encodeURIComponent(row.id)}`);
+            if (!res.ok) throw new Error(`Server returned ${res.status}`);
+            return res.json();
+        },
+    });
+
+    const toggle = () => setOpen((o) => !o);
 
     return (
         <>
@@ -42,7 +38,7 @@ export function SearchResultRow({ row }: { row: Summary }) {
                         {loadingDetail ? (
                             <div className="flex items-center gap-2 px-4 py-5 text-sm text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading details…</div>
                         ) : detailError ? (
-                            <div className="flex items-center gap-2 px-4 py-5 text-sm text-red-500"><FileText size={16} /> {detailError}</div>
+                            <div className="flex items-center gap-2 px-4 py-5 text-sm text-red-500"><FileText size={16} /> {detailError instanceof Error ? detailError.message : "Failed to load details."}</div>
                         ) : detail ? (
                             <FieldCards fields={detail.fields} />
                         ) : (

@@ -1,5 +1,6 @@
 import "./globals.css";
 import NavBar from "@/components/NavBar";
+import Providers from "@/components/Providers";
 import { ProcessingProvider } from "@/components/ProcessingGuard";
 
 export const metadata = {
@@ -11,10 +12,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
         <html lang="en">
         <body>
-        <ProcessingProvider>
-            <NavBar />
-            {children}
-        </ProcessingProvider>
+        <Providers>
+            <ProcessingProvider>
+                <NavBar />
+                {children}
+            </ProcessingProvider>
+        </Providers>
         </body>
         </html>
     );
