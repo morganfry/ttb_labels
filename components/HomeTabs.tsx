@@ -8,7 +8,7 @@ import CsvVerify from "./CsvVerify";
 type Mode = "pdf" | "csv";
 
 const TABS: { mode: Mode; label: string; Icon: typeof FileText; hint: string }[] = [
-    { mode: "pdf", label: "PDF upload", Icon: FileText, hint: "Upload combined application PDFs to check them against TTB requirements." },
+    { mode: "pdf", label: "PDF upload", Icon: FileText, hint: "Upload combined application PDFs (TTB Form 5100.31, OMB No. 1513-0020) to check them against TTB requirements." },
     { mode: "csv", label: "CSV bulk", Icon: FileSpreadsheet, hint: "Upload a CSV of applications with label image URLs for bulk verification." },
 ];
 
