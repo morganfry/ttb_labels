@@ -10,6 +10,7 @@ import { detectOne } from "@/lib/detectClient";
 import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
 import { ResultsTable } from "./ResultsTable";
+import { ReviewHistoryLink } from "./ReviewHistoryLink";
 import { useRegisterProcessing } from "./ProcessingGuard";
 
 /**
@@ -256,6 +257,8 @@ export default function VerificationApp() {
                 )}
 
                 {hasResults && <ResultsTable items={docItems.filter((it) => it.result)} />}
+
+                {hasResults && !processing && <ReviewHistoryLink />}
         </>
     );
 }

@@ -7,6 +7,7 @@ import { OVERALL_META, isZip, isImage } from "@/lib/uiTypes";
 import { parseCsv, isLocalImageRef, CSV_COLUMNS, IMAGE_URLS_COLUMN, type CsvRow } from "@/lib/csvParse";
 import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
+import { ReviewHistoryLink } from "./ReviewHistoryLink";
 import { useRegisterProcessing } from "./ProcessingGuard";
 
 /** Client-side guard on total uploaded image bytes (MB); the server enforces the
@@ -431,6 +432,8 @@ export default function CsvVerify() {
             )}
 
             {resultItems.length > 0 && <ResultsTable items={resultItems} />}
+
+            {hasResults && !processing && <ReviewHistoryLink />}
 
             {!hasResults && <CsvFormatGuide onDownload={downloadSample} />}
         </>
