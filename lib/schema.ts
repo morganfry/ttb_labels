@@ -149,6 +149,38 @@ export const FIELD_RULES: Record<keyof LabelExtraction, FieldRule> = {
 };
 
 /**
+ * Cross-cutting matcher tuning — the knobs that aren't per-field (those live in
+ * FIELD_RULES) or per-product-type (RULESET_BY_TYPE). Kept here with the rest of
+ * the compliance logic, deliberately NOT in config.ts: changing any of these
+ * changes verdicts, so they must move through code review + tests, never a
+ * deploy-time env override.
+ */
+export const MATCH_TUNING = {
+    /**
+     * tolerant: score assigned when one name's words are fully contained in the
+     * other (a confident match edit-distance underrates, e.g. "VERONA HILLS" vs
+     * "Verona Hills Vineyards"). Must clear the strictest reviewBand (0.95) so it
+     * resolves to pass.
+     */
+    containmentScore: 0.97,
+    /**
+     * tolerant: minimum shared distinct words for the containment rule to fire.
+     * The safety floor — a lone shared token (e.g. "Reserve") must not force a
+     * match.
+     */
+    containmentMinTokens: 2,
+    /** tolerant: similarity floor used when a FieldRule omits `threshold`. */
+    defaultThreshold: 0.85,
+    /** numeric: absolute tolerance used when a FieldRule omits `tolerance`. */
+    defaultNumericTolerance: 0.01,
+    /**
+     * numeric (mL): net contents also allows this *relative* slack on top of the
+     * absolute tolerance, to absorb rounding across unit conversions (mL/cL/L).
+     */
+    netContentsRelativeTolerance: 0.005,
+} as const;
+
+/**
  * Type-specific rules selected by {@link ApplicationData.productType}. This
  * is what makes item 5 a controller rather than just another compared field:
  * it picks the tolerance band, which optional fields apply, and the

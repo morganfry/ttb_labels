@@ -9,7 +9,7 @@
  */
 
 import {
-    FIELD_RULES, FORM_COUNTERPART, RULESET_BY_TYPE, TTB_GOVERNMENT_WARNING,
+    FIELD_RULES, FORM_COUNTERPART, RULESET_BY_TYPE, TTB_GOVERNMENT_WARNING, MATCH_TUNING,
     type LabelExtraction, type ExtractedField, type WarningFormatting,
     type ApplicationData, type ProductType, type Confidence,
     type FieldResult, type FieldStatus, type VerificationResult,
@@ -36,10 +36,12 @@ interface TolerantArgs {
 function tolerantMatch(a: TolerantArgs): { status: FieldStatus; score: number; issues: string[] } {
     const sl = a.scoreLabel ?? a.labelValue, sa = a.scoreApp ?? a.appValue;
     let score = similarity(sl, sa, a.tokenSet);
-    // One name fully contained in the other (≥2 shared words) is a confident
-    // match that edit-distance underrates — e.g. "VERONA HILLS" vs "Verona Hills
-    // Vineyards", or a producer block with extra "ESTATE BOTTLED BY" boilerplate.
-    if (score < 0.97 && tokensSubsumed(sl, sa)) score = 0.97;
+    // One name fully contained in the other (>= containmentMinTokens shared words)
+    // is a confident match that edit-distance underrates — e.g. "VERONA HILLS" vs
+    // "Verona Hills Vineyards", or a producer block with extra "ESTATE BOTTLED BY".
+    if (score < MATCH_TUNING.containmentScore && tokensSubsumed(sl, sa, MATCH_TUNING.containmentMinTokens)) {
+        score = MATCH_TUNING.containmentScore;
+    }
     const review = a.reviewBand ?? a.threshold; // no band → no review zone
     if (score >= review) return { status: "pass", score, issues: [] };
     if (score >= a.threshold) return { status: "review", score, issues: [`Close but not exact (similarity ${score.toFixed(2)}); confirm by eye.`] };
@@ -70,7 +72,7 @@ function numericMatch(labelValue: string, appValue: string | null, unit: "percen
     if (appValue === null) return { status: "pass", issues: [] }; // label-only: presence is the bar
     const appNum = parse(appValue);
     if (appNum === null) return { status: "fail", issues: [`Could not parse a ${unit} value from application "${appValue}".`] };
-    const tol = unit === "ml" ? Math.max(tolerance, appNum * 0.005) : tolerance;
+    const tol = unit === "ml" ? Math.max(tolerance, appNum * MATCH_TUNING.netContentsRelativeTolerance) : tolerance;
     if (Math.abs(labelNum - appNum) <= tol) return { status: "pass", issues: [] };
     return { status: "fail", issues: [`Label ${labelNum}${unit === "percent" ? "%" : "mL"} differs from application ${appNum} beyond tolerance ${tol}.`] };
 }
@@ -186,7 +188,7 @@ function dispatch(
     switch (rule.matcher) {
         case "numeric": {
             // ABV tolerance comes from the product ruleset; volume from the rule.
-            const tol = rule.unit === "percent" ? ruleset.abvTolerance : (rule.tolerance ?? 0.01);
+            const tol = rule.unit === "percent" ? ruleset.abvTolerance : (rule.tolerance ?? MATCH_TUNING.defaultNumericTolerance);
             const r = numericMatch(field.value!, appValue, rule.unit!, tol);
             return { ...base, status: r.status, issues: r.issues };
         }
@@ -200,7 +202,7 @@ function dispatch(
             const r = tolerantMatch({
                 labelValue: field.value!, appValue,
                 scoreLabel: prepTolerant(field.value!, rule.normalize), scoreApp: prepTolerant(appValue, rule.normalize),
-                threshold: rule.threshold ?? 0.85, reviewBand: rule.reviewBand, tokenSet: rule.tokenSet,
+                threshold: rule.threshold ?? MATCH_TUNING.defaultThreshold, reviewBand: rule.reviewBand, tokenSet: rule.tokenSet,
             });
             return { ...base, status: r.status, score: r.score, issues: r.issues };
         }
