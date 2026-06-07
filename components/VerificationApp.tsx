@@ -258,7 +258,9 @@ export default function VerificationApp() {
 
                 {hasResults && <ResultsTable items={docItems.filter((it) => it.result)} />}
 
-                {hasResults && !processing && <ReviewHistoryLink />}
+                {/* Only when a verdict was actually persisted (errored items save
+                    nothing), so the link never points at an empty history of this run. */}
+                {docItems.some((it) => it.result) && !processing && <ReviewHistoryLink />}
         </>
     );
 }

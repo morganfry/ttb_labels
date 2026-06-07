@@ -139,6 +139,12 @@ export default function CsvVerify() {
     useRegisterProcessing(processing); // warn on navigation while a run is active
     const inputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    // The latest *intended* image set, updated synchronously so back-to-back
+    // add/remove clicks each build on the previous one (state lags behind the
+    // async index rebuild). `reqIdRef` stamps each rebuild so a slow one that
+    // resolves out of order can't clobber a newer set (last-write-wins race).
+    const imageFilesRef = useRef<File[]>([]);
+    const reqIdRef = useRef(0);
 
     // Derived from rows + the (optional) uploaded images, so the cross-check stays
     // correct whenever images are added or removed after the CSV.
@@ -159,16 +165,25 @@ export default function CsvVerify() {
     // rebuild the index from the whole set. Replacing rather than merging keeps
     // basename-uniqueness correct; callers pass the full intended list.
     const applyImageFiles = useCallback(async (files: File[]) => {
-        if (files.length === 0) { dispatch({ type: "imagesSet", files: [], index: null }); return; }
+        if (files.length === 0) {
+            imageFilesRef.current = [];
+            reqIdRef.current++; // invalidate any in-flight rebuild
+            dispatch({ type: "imagesSet", files: [], index: null });
+            return;
+        }
         const totalBytes = files.reduce((n, f) => n + f.size, 0);
         if (totalBytes > IMAGES_MAX_MB * 1024 * 1024) {
+            // Reject the whole set without touching the accepted one in flight.
             dispatch({ type: "imagesError", message: `Uploaded images total more than the ${IMAGES_MAX_MB} MB limit.` });
             return;
         }
+        imageFilesRef.current = files;
+        const reqId = ++reqIdRef.current;
         try {
-            dispatch({ type: "imagesSet", files, index: await indexImageFiles(files) });
+            const index = await indexImageFiles(files);
+            if (reqId === reqIdRef.current) dispatch({ type: "imagesSet", files, index });
         } catch {
-            dispatch({ type: "imagesError", message: "Couldn't read one of the uploaded archives as a ZIP." });
+            if (reqId === reqIdRef.current) dispatch({ type: "imagesError", message: "Couldn't read one of the uploaded archives as a ZIP." });
         }
     }, []);
 
@@ -178,20 +193,21 @@ export default function CsvVerify() {
     };
 
     // Add dropped/picked image sources (loose images and/or ZIPs), deduped by
-    // name so re-adding a file doesn't pile up duplicates.
+    // name so re-adding a file doesn't pile up duplicates. Merge onto the latest
+    // intended set (the ref), not the render-closure value, so rapid adds compose.
     const onPickImages = (files: FileList | null) => {
         const incoming = Array.from(files ?? []).filter((f) => isImage(f.name) || isZip(f.name));
         if (incoming.length === 0) {
             if (files && files.length) dispatch({ type: "imagesError", message: "Only image files (JPG/PNG/…) or a ZIP can be added here." });
             return;
         }
-        const byName = new Map(imageFiles.map((f) => [f.name, f]));
+        const byName = new Map(imageFilesRef.current.map((f) => [f.name, f]));
         for (const f of incoming) byName.set(f.name, f);
         void applyImageFiles([...byName.values()]);
     };
 
-    const removeImage = (name: string) => void applyImageFiles(imageFiles.filter((f) => f.name !== name));
-    const reset = () => dispatch({ type: "reset" });
+    const removeImage = (name: string) => void applyImageFiles(imageFilesRef.current.filter((f) => f.name !== name));
+    const reset = () => { imageFilesRef.current = []; reqIdRef.current++; dispatch({ type: "reset" }); };
 
     const downloadSample = () => {
         const url = URL.createObjectURL(new Blob([SAMPLE_CSV], { type: "text/csv" }));
@@ -324,7 +340,10 @@ export default function CsvVerify() {
             )}
 
             {file && imageFiles.length > 0 && (
-                <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
+                <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => { e.preventDefault(); onPickImages(e.dataTransfer?.files ?? null); }}
+                    className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
                     <div className="mb-2.5 flex items-center gap-3">
                         <Images size={22} className="shrink-0 text-violet-600" />
                         <div className="min-w-0 flex-1 text-sm text-slate-600">
@@ -433,7 +452,9 @@ export default function CsvVerify() {
 
             {resultItems.length > 0 && <ResultsTable items={resultItems} />}
 
-            {hasResults && !processing && <ReviewHistoryLink />}
+            {/* Only when a verdict was actually persisted (errored-only runs save
+                nothing), so the link never points at an empty history of this run. */}
+            {resultItems.length > 0 && !processing && <ReviewHistoryLink />}
 
             {!hasResults && <CsvFormatGuide onDownload={downloadSample} />}
         </>

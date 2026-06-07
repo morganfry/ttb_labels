@@ -332,7 +332,9 @@ sets `X-Accel-Buffering: no` for nginx).
 - CSV image fetching is server-side with only a best-effort SSRF guard (http(s)
   only; loopback/link-local/RFC-1918 rejected) + size/timeout caps; production
   needs an allow-list or egress proxy.
-- ZIP archives are not expanded in the browser build.
+- Dropped ZIPs ARE expanded in the browser: the upload tab expands a ZIP of
+  PDFs/images (zipDocs.ts, with a real decompressed budget); the CSV tab reads a
+  ZIP of label images in memory (zipImages.ts, compressed-size cap only).
 - Long batches need a streaming-friendly reverse proxy (buffering off).
 - No COLA integration, by design.
 

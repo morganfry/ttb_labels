@@ -44,9 +44,9 @@ flowchart LR
 Notes:
 - **No COLA integration** — this is a standalone proof-of-concept by design.
 - **Retention:** only extracted text and verdicts are stored. Uploaded PDFs and
-  label images (URL- or ZIP-sourced) are processed in memory and discarded.
-- The CSV **ZIP-of-images** option avoids the `imgs` edge entirely, which is the
-  safer choice when outbound fetching is restricted.
+  label images (URL- or upload-sourced) are processed in memory and discarded.
+- The CSV **uploaded-images** option (loose files and/or a ZIP) avoids the `imgs`
+  edge entirely, which is the safer choice when outbound fetching is restricted.
 
 ---
 
@@ -58,8 +58,8 @@ Two intake fronts — the **upload tab** (combined PDFs or flat images) and
 = label) while an image can't be, so the one image is read by both parsers; a
 dropped ZIP is expanded client-side (`zipDocs`) into individual PDF/image items.
 The CSV path swaps the *front* entirely: application data comes from columns and
-label images are resolved from URLs/ZIP. From matching onward all paths are
-identical.
+label images are resolved from URLs and/or uploaded images (loose files and/or a
+ZIP). From matching onward all paths are identical.
 
 ```mermaid
 %%{init: {'flowchart': {'rankSpacing': 50, 'nodeSpacing': 60}}}%%
@@ -86,7 +86,7 @@ flowchart LR
         zipdocs["zipDocs (pure)<br/>expand upload ZIP → PDF/image items"]
         mediatype["mediaType (pure)<br/>name → PDF / image / ZIP + media type"]
         csvparse["csvParse<br/>columns → ApplicationData + image refs"]
-        imgs["imageFetch · zipImages<br/>resolve label images (URL / ZIP)"]
+        imgs["imageFetch · zipImages<br/>resolve label images (URL / upload)"]
         parsers["parsers<br/>parseLabel · parseForm"]
         extraction["extraction<br/>shared vision-model call"]
         matching["matching.verify<br/>THE JUDGE — confidence-gated"]
@@ -102,7 +102,7 @@ flowchart LR
 
     tabs --> pdfui & csvui
     pdfui -->|"multipart PDFs / images"| rverify
-    csvui -->|"CSV + optional ZIP"| rcsv
+    csvui -->|"CSV + optional images"| rcsv
     search --> rsearch
     pdfui -. advisory, PDF only .-> detect
     pdfui -. expand ZIP .-> zipdocs
@@ -202,7 +202,8 @@ label and form parsers. Everything from transcription onward is identical.
 **CSV variant.** Same diagram with the front swapped: instead of slicing a PDF
 and model-reading the form, `csvParse` turns the row's columns into the
 application data, and `imageFetch`/`zipImages` resolve the label images (from
-URLs or the uploaded ZIP). The label is still model-read; `verify`, persistence,
+URLs and/or uploaded images — loose files and/or a ZIP). The label is still
+model-read; `verify`, persistence,
 streaming, and the shared `runPool` are identical.
 
 ---
