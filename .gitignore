@@ -5,8 +5,8 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 context/
-# Local sample inputs. PDFs and JPGs are versioned via Git LFS (see
-# .gitattributes); the bulky archives and the CSV samples stay out of git.
+# LibreOffice/OpenOffice lock files
+.~lock.*#
+# Local sample inputs are versioned via Git LFS (see .gitattributes). Lone
+# exception: the 163 MB source PDF archive stays out of git entirely.
 test-pdfs/*.zip
-test-jpgs/*.zip
-test-csvs/
