@@ -104,15 +104,26 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   scoreLabel/scoreApp — displayed values stay verbatim. Add a preset there rather
   than special-casing a field in the dispatcher.
 - tolerantMatch also applies a token-CONTAINMENT boost (tokensSubsumed): if one
-  name's words (≥2) are fully inside the other, score is lifted to a pass. This
-  is what makes "VERONA HILLS" match "Verona Hills Vineyards" and absorbs
-  producer boilerplate. The ≥2 floor is the safety bound — don't drop it (a lone
-  shared token would force spurious matches).
+  name's words are fully inside the other, score is lifted to a pass. This is
+  what makes "VERONA HILLS" match "Verona Hills Vineyards" and absorbs producer
+  boilerplate. The min-shared-words floor is the safety bound (a lone shared
+  token must not force a match).
+- Cross-cutting matcher knobs that aren't per-field/per-type live in
+  schema.ts MATCH_TUNING (containmentScore, containmentMinTokens, the default
+  threshold/tolerance, netContentsRelativeTolerance) — NOT config.ts, because
+  they change verdicts. textNormalize.ts stays dependency-free: matching.ts
+  passes the tuning value into tokensSubsumed rather than the helper importing
+  schema.
 - Pure logic stays framework-free in lib/ and gets a Vitest test (csvParse.ts
   is framework-free precisely so it can be reused on the client for preview).
 - Comment the WHY, not the what. TSDoc on exported/public surfaces.
 - Shared UI (badges, field cards, display constants) is imported by both
   screens — change once, not per-screen.
+
+## Commits
+- Keep messages tight: a one-line imperative subject (~50–72 chars). Add a body
+  ONLY when the *why* isn't obvious from the subject — one or two short sentences,
+  never a bulleted recap of the diff. (The Co-Authored-By footer is still required.)
 
 ## Care
 - This is compliance tooling: correctness over cleverness. Don't trade
