@@ -79,8 +79,11 @@ function numericMatch(labelValue: string, appValue: string | null, unit: "percen
 
 /**
  * Strict government-warning match. The one field where "close" is a
- * compliance failure: wording must be exact and the header must be all-caps.
- * Only line-wrapping whitespace is tolerated (not a content difference).
+ * compliance failure: the wording must be exact. Only line-wrapping whitespace
+ * and letter case are tolerated in the statement BODY — case because a label may
+ * legitimately set the whole statement in caps, and the regulated all-caps
+ * requirement is on the "GOVERNMENT WARNING" header, checked separately via
+ * fmt.headerAllCaps (a visual signal, not derivable from the case-folded text).
  *
  * Bold is the softest visual signal the model reports, so a bold-only doubt
  * is downgraded to `review` rather than a hard fail — a borderline weight
@@ -89,7 +92,8 @@ function numericMatch(labelValue: string, appValue: string | null, unit: "percen
 function strictWarningMatch(warning: ExtractedField, fmt: WarningFormatting): { status: FieldStatus; issues: string[] } {
     const issues: string[] = [];
     if (!warning.found || warning.value === null) return { status: "fail", issues: ["Government warning is missing from the label."] };
-    const textExact = collapseSpaces(warning.value) === collapseSpaces(TTB_GOVERNMENT_WARNING);
+    const canon = (s: string) => collapseSpaces(s).toUpperCase();
+    const textExact = canon(warning.value) === canon(TTB_GOVERNMENT_WARNING);
     if (!textExact) issues.push("Warning wording does not exactly match the required statement.");
     if (!fmt.headerAllCaps) issues.push('"GOVERNMENT WARNING:" must be in all capital letters.');
     const boldOnlyProblem = textExact && fmt.headerAllCaps && !fmt.headerBold;

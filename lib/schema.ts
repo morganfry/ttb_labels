@@ -232,7 +232,9 @@ export const RULESET_BY_TYPE: Record<ProductType, ProductRuleset> = {
 
 /**
  * Canonical government warning (27 CFR 16.21). The strict matcher compares
- * against this exact string after collapsing whitespace only.
+ * against this exact string after collapsing whitespace and folding case (a
+ * label may legitimately set the statement in all caps); the regulated all-caps
+ * header is enforced separately as a visual signal, not from this text.
  *
  * IMPORTANT: verify this wording against the current regulation before any
  * real use — the strict check is only as correct as this constant, and a

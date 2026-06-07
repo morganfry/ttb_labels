@@ -130,6 +130,9 @@ describe("government warning", () => {
     it("altered wording fails", () => {
         expect(statusOf(baseLabel({ governmentWarning: fld("GOVERNMENT WARNING: Drinking is bad for you.") }), baseApp(), "governmentWarning").status).toBe("fail");
     });
+    it("an all-caps statement body passes (case tolerated; header caps/bold still required)", () => {
+        expect(statusOf(baseLabel({ governmentWarning: fld(TTB_GOVERNMENT_WARNING.toUpperCase()) }), baseApp(), "governmentWarning").status).toBe("pass");
+    });
     it("missing warning fails", () => {
         const r = statusOf(baseLabel({ governmentWarning: fld(null) }), baseApp(), "governmentWarning");
         expect(r.status).toBe("fail"); expect(r.issues.join(" ")).toMatch(/missing/i);
