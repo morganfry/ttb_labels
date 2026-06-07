@@ -5,3 +5,7 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 context/
+# Local sample inputs — large binaries, never committed (use Git LFS if needed)
+test-pdfs/
+test-csvs/
+test-jpgs/
