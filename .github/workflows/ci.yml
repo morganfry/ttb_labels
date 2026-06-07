@@ -1,0 +1,32 @@
+name: CI
+
+# Typecheck, test, and build on every push and PR. Deployment is handled by
+# Render's Blueprint (render.yaml) — it auto-deploys on a green push to main —
+# so this workflow is a pure quality gate, not a deploy pipeline.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # No LFS: the test/build don't read the fixture binaries, and skipping
+        # the pull avoids burning Git LFS bandwidth on every CI run.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build

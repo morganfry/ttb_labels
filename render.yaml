@@ -1,0 +1,48 @@
+# Render Blueprint — one-click demo deploy of the TTB label-verification app.
+#
+# Deploy: Render dashboard → New → Blueprint → pick this repo. Render builds the
+# existing Dockerfile (Next standalone) and provisions the Postgres below,
+# wiring DATABASE_URL automatically. You'll be prompted once for the Anthropic
+# API key (it is never stored in git — sync:false).
+#
+# Why Render over Vercel here: this app uploads whole PDFs (>4.5 MB, which
+# Vercel's serverless body cap rejects) and streams NDJSON results row-by-row.
+# A persistent web service has no body cap and honors the route's
+# `X-Accel-Buffering: no`, so both work as designed. See db.ts for the SSL note:
+# the same-region internal DATABASE_URL needs no TLS, so PGSSLMODE stays unset.
+
+services:
+  - type: web
+    name: ttb-label-verification
+    runtime: docker
+    plan: starter            # paid tier — no spin-down / cold starts for live demos
+    region: virginia         # us-east, closest to FL; MUST match the database region
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /        # GET / returns 200 without touching the DB
+    autoDeploy: true          # redeploy on push to main
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false           # set once in the dashboard; never committed
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ttb-labels-db
+          property: connectionString   # internal (no-SSL) URL, same region
+      - key: NODE_ENV
+        value: production
+      # Optional model/concurrency overrides — defaults live in lib/config.ts.
+      # Uncomment and set in the dashboard to override without a code change:
+      # - key: MODEL
+      #   sync: false
+      # - key: LABEL_MODEL
+      #   sync: false
+      # - key: FORM_MODEL
+      #   sync: false
+      # - key: BATCH_CONCURRENCY
+      #   sync: false
+
+databases:
+  - name: ttb-labels-db
+    plan: basic-256mb         # paid Postgres; schema is created on first request
+    region: virginia          # must equal the web service region for the internal URL
+    postgresMajorVersion: "16"

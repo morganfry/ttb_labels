@@ -132,7 +132,7 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 - `matching.ts` — the three matchers + the dispatcher.
 - `orchestration.ts` — `runPool`, the concurrency-capped streaming worker pool, plus the PDF per-item pipeline.
 - `csvOrchestration.ts` — the CSV per-item pipeline (fetch images → transcribe → match → persist), run through the same `runPool`.
-- `persistence.ts` — schema migration, save, search, and fetch (Vercel Postgres).
+- `persistence.ts` — schema migration, save, search, and fetch (PostgreSQL via `pg`).
 
 ### Key design decisions
 
@@ -153,7 +153,7 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 
 **Streaming over batch-blocking.** The 5-second expectation is per-label, not per-batch. A worker pool keeps a bounded number of applications in flight and streams each result as it lands, so the table fills progressively and one slow item never holds up the rest.
 
-**Same schema, swappable engine.** The relational schema is the durable artifact. It runs on Vercel Postgres here; the schema ports to any Postgres for production.
+**Same schema, swappable engine.** The relational schema is the durable artifact. It runs on a managed Postgres here; the schema ports to any Postgres for production.
 
 ---
 
@@ -245,8 +245,17 @@ docker run -p 3000:3000 \
 ```
 The schema is created on the first request (idempotent migration). If a reverse proxy sits in front, disable response buffering so the verify route can stream results incrementally (the route sets `X-Accel-Buffering: no` for nginx).
 
-### Deploy to Vercel (GitHub Actions)
-A test-gated GitHub Actions workflow (`.github/workflows/deploy.yml`) deploys to Vercel via the Vercel CLI on a green `main`. Setup, required secrets, the pooled `DATABASE_URL`, and the function-duration / public-exposure caveats are in **[docs/deploy-vercel.md](docs/deploy-vercel.md)**.
+### Deploy to Render (Blueprint)
+A committed Render Blueprint (`render.yaml`) provisions the app as a Docker web
+service plus a managed Postgres in one step. From the Render dashboard: **New →
+Blueprint → pick this repo**; Render builds the existing `Dockerfile`, wires
+`DATABASE_URL` from the database, and prompts once for `ANTHROPIC_API_KEY` (kept
+as a secret, never committed). `autoDeploy` ships every green push to `main`.
+
+A persistent web service is the right fit because the app uploads whole PDFs and
+streams NDJSON results — neither survives a serverless function's request-body
+cap or response buffering. CI (`.github/workflows/ci.yml`) typechecks, tests,
+and builds on every push; the deploy itself is handled by Render.
 
 ---
 
