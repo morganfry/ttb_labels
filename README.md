@@ -245,6 +245,9 @@ docker run -p 3000:3000 \
 ```
 The schema is created on the first request (idempotent migration). If a reverse proxy sits in front, disable response buffering so the verify route can stream results incrementally (the route sets `X-Accel-Buffering: no` for nginx).
 
+### Deploy to Vercel (GitHub Actions)
+A test-gated GitHub Actions workflow (`.github/workflows/deploy.yml`) deploys to Vercel via the Vercel CLI on a green `main`. Setup, required secrets, the pooled `DATABASE_URL`, and the function-duration / public-exposure caveats are in **[docs/deploy-vercel.md](docs/deploy-vercel.md)**.
+
 ---
 
 ## Assumptions
