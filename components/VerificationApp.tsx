@@ -1,9 +1,11 @@
 "use client";
 
 import { useReducer, useCallback } from "react";
-import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Loader2, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { uid, isPdf, isZip, OVERALL_META } from "@/lib/uiTypes";
+import { config } from "@/lib/config";
+import { extractZipPdfs } from "@/lib/zipPdfs";
 import { detectOne } from "@/lib/detectClient";
 import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
@@ -16,9 +18,10 @@ import { useRegisterProcessing } from "./ProcessingGuard";
  * (detecting → queued/review → processing → done) atomic and rules out
  * impossible combinations that scattered useState calls allow.
  */
-type State = { items: Item[]; processing: boolean; processError: string | null };
+type State = { items: Item[]; processing: boolean; processError: string | null; notice: string | null };
 type Action =
     | { type: "add"; items: Item[] }
+    | { type: "notice"; message: string | null }
     | { type: "detected"; id: string; detection: NonNullable<Item["detection"]>; status: string }
     | { type: "remove"; id: string }
     | { type: "override"; id: string }
@@ -32,6 +35,8 @@ function reducer(s: State, a: Action): State {
     switch (a.type) {
         case "add":
             return { ...s, items: [...s.items, ...a.items] };
+        case "notice":
+            return { ...s, notice: a.message };
         case "detected":
             return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, detection: a.detection, status: a.status } : x) };
         case "remove":
@@ -39,7 +44,7 @@ function reducer(s: State, a: Action): State {
         case "override":
             return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, status: "queued" } : x) };
         case "reset":
-            return { items: [], processing: false, processError: null };
+            return { items: [], processing: false, processError: null, notice: null };
         case "runStart": {
             const ids = new Set(a.ids);
             return { ...s, processing: true, processError: null, items: s.items.map((x) => ids.has(x.id) ? { ...x, status: "processing" } : x) };
@@ -55,24 +60,65 @@ function reducer(s: State, a: Action): State {
 }
 
 export default function VerificationApp() {
-    const [state, dispatch] = useReducer(reducer, { items: [], processing: false, processError: null });
-    const { items, processing, processError } = state;
+    const [state, dispatch] = useReducer(reducer, { items: [], processing: false, processError: null, notice: null });
+    const { items, processing, processError, notice } = state;
     useRegisterProcessing(processing); // warn on navigation while a run is active
 
-    const addFiles = useCallback((fileList: FileList) => {
-        const incoming: Item[] = [];
-        for (const f of Array.from(fileList)) {
-            if (isPdf(f.name)) incoming.push({ id: uid(), name: f.name, kind: "pdf", fromZip: null, status: "detecting", result: null, file: f, detection: null });
-            else if (isZip(f.name)) incoming.push({ id: uid(), name: f.name, kind: "zip", fromZip: null, status: "needsExtract", result: null, file: f });
-        }
+    // Add PDFs as work items and kick off region detection for each. `fromZip`
+    // tags those that came out of an archive (for display only).
+    const addPdfs = useCallback((files: File[], fromZip: string | null) => {
+        const incoming: Item[] = files.map((f) => ({
+            id: uid(), name: f.name, kind: "pdf", fromZip, status: "detecting", result: null, file: f, detection: null,
+        }));
         if (!incoming.length) return;
         dispatch({ type: "add", items: incoming });
-        incoming.filter((it) => it.kind === "pdf").forEach((it) => {
+        incoming.forEach((it) => {
             detectOne(it.file!).then((detection) => {
                 dispatch({ type: "detected", id: it.id, detection, status: detection.status === "ready" ? "queued" : "review" });
             });
         });
     }, []);
+
+    // Expand a dropped ZIP in the browser; its PDFs join the same queue/pipeline.
+    const ingestZip = useCallback(async (file: File) => {
+        const limitMb = Math.round(config.pdfZipMaxBytes / (1024 * 1024));
+        if (file.size > config.pdfZipMaxBytes) {
+            dispatch({ type: "notice", message: `${file.name} is too large to expand (over ${limitMb} MB).` });
+            return;
+        }
+        dispatch({ type: "notice", message: `Extracting ${file.name}…` });
+        await new Promise((r) => setTimeout(r, 0)); // let the notice paint before the synchronous unzip
+        let result;
+        try {
+            result = extractZipPdfs(new Uint8Array(await file.arrayBuffer()), {
+                maxEntryBytes: config.pdfZipMaxEntryBytes,
+                maxTotalBytes: config.pdfZipMaxTotalBytes,
+            });
+        } catch {
+            dispatch({ type: "notice", message: `Couldn't read ${file.name} — not a valid ZIP.` });
+            return;
+        }
+        if (!result.pdfs.length) {
+            dispatch({ type: "notice", message: result.skipped.length
+                ? `${file.name}: every PDF exceeded the size limit and was skipped.`
+                : `${file.name} contained no PDFs.` });
+            return;
+        }
+        addPdfs(result.pdfs.map((p) => new File([p.bytes as BlobPart], p.name, { type: "application/pdf" })), file.name);
+        const n = result.pdfs.length;
+        dispatch({ type: "notice", message: result.skipped.length
+            ? `Added ${n} PDF${n === 1 ? "" : "s"} from ${file.name}; skipped ${result.skipped.length} oversized.`
+            : null });
+    }, [addPdfs]);
+
+    const addFiles = useCallback((fileList: FileList) => {
+        const pdfs: File[] = [];
+        for (const f of Array.from(fileList)) {
+            if (isPdf(f.name)) pdfs.push(f);
+            else if (isZip(f.name)) void ingestZip(f);
+        }
+        addPdfs(pdfs, null);
+    }, [addPdfs, ingestZip]);
 
     const removeItem = (id: string) => dispatch({ type: "remove", id });
     const overrideToReady = (id: string) => dispatch({ type: "override", id });
@@ -142,6 +188,16 @@ export default function VerificationApp() {
     return (
         <>
             <Dropzone onFiles={addFiles} />
+
+                {notice && (
+                    <div className="mb-4 flex items-center justify-between gap-2.5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        <span>{notice}</span>
+                        <button onClick={() => dispatch({ type: "notice", message: null })} aria-label="Dismiss"
+                                className="flex shrink-0 rounded-md p-1 text-blue-400 hover:text-blue-600">
+                            <X size={16} />
+                        </button>
+                    </div>
+                )}
 
                 {items.length > 0 && (
                     <FileQueue items={items} pdfCount={pdfItems.length} disabled={processing}

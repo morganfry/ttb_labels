@@ -25,8 +25,9 @@ export interface ZipImageIndex {
     byBase: Map<string, Uint8Array>;
 }
 
-/** Archive cruft some zip tools add; never a real label image. */
-const JUNK_RE = /(^|\/)(__MACOSX\/|\.DS_Store$|Thumbs\.db$)/i;
+/** Archive cruft some zip tools add; never a real entry. Shared with the PDF
+ *  ZIP path (zipPdfs.ts) so both intakes skip the same junk. */
+export const ZIP_JUNK_RE = /(^|\/)(__MACOSX\/|\.DS_Store$|Thumbs\.db$)/i;
 
 /** Canonicalize a path or CSV reference: backslashes → "/", drop "./" and any
  *  leading slashes. (Traversal like ".." is rejected earlier, in csvParse.) */
@@ -43,7 +44,7 @@ export function indexZipImages(bytes: Uint8Array): ZipImageIndex {
 
     for (const [rawPath, data] of Object.entries(files)) {
         if (rawPath.endsWith("/")) continue; // directory entry
-        if (JUNK_RE.test(rawPath)) continue; // archive cruft
+        if (ZIP_JUNK_RE.test(rawPath)) continue; // archive cruft
         const path = normalizeZipPath(rawPath);
         if (path === "") continue;
         byPath.set(path, data);

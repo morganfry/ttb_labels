@@ -8,7 +8,7 @@ type Detection = {
 };
 
 export type Item = {
-    id: string; name: string; kind: "pdf" | "zip" | "csv"; fromZip: string | null;
+    id: string; name: string; kind: "pdf" | "csv"; fromZip: string | null;
     status: string; result: any; error?: any; file?: File; detection?: Detection | null;
 };
 
@@ -50,5 +50,6 @@ export const OVERALL_META: Record<string, OverallMeta> = {
 let idc = 0;
 export const uid = () => `f${++idc}`;
 export const isPdf = (n: string) => /\.pdf$/i.test(n);
-export const isZip = (n: string) => /\.(zip|7z|rar|tar|gz)$/i.test(n);
+/** Only real ZIPs — that's all the browser extractor (fflate) handles. */
+export const isZip = (n: string) => /\.zip$/i.test(n);
 

@@ -23,10 +23,20 @@ README.md; for file locations see the architecture section there.
   worker pool shared, not forked. Don't let the CSV path acquire its own matching
   or persistence logic, and route both image sources through resolveLabelImages
   (imageFetch.ts), not a second code path.
+- **A ZIP on the PDF tab is transport, not a third path.** A dropped .zip is
+  expanded CLIENT-SIDE (zipPdfs.ts) into individual PDF File objects that go
+  through the exact same detect → /api/verify → matcher → persist flow as a
+  directly-uploaded PDF (VerificationApp.addPdfs). Don't add server-side PDF-ZIP
+  handling or a parallel verify route. Unlike the CSV image ZIP, extraction
+  enforces a REAL decompressed budget via fflate's pre-decompress filter
+  (pdfZipMaxEntryBytes/pdfZipMaxTotalBytes) — keep that; it's the zip-bomb guard.
+  Junk-filtering + path normalization are shared with zipImages.ts (ZIP_JUNK_RE,
+  normalizeZipPath), not re-implemented.
 - **Three homes for constants, kept separate on purpose:**
     - Domain rules (matcher thresholds, tolerances, the warning text) → schema.ts
     - Operational knobs (model/labelModel/formModel, maxTokens, concurrency,
-      pageSize, the CSV csvImage*/csvMaxImagesPerRow caps) → config.ts
+      pageSize, the CSV csvImage*/csvMaxImagesPerRow caps, the PDF pdfZip* caps)
+      → config.ts
     - Secrets (ANTHROPIC_API_KEY) → process.env only, never a committed file
       Don't consolidate these; the split is deliberate.
 - **Tailwind color classes must be full literal strings** (see STATUS_META /

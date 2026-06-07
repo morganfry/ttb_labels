@@ -9,7 +9,7 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 ## Features
 
 - **Two ingestion modes** — the Verify screen has a **PDF upload** tab and a **CSV bulk** tab. PDF mode reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or files in an uploaded ZIP). Both feed the identical matching, persistence, and results pipeline.
-- **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed). ZIP archives are accepted at the intake (server-side expansion; see limitations).
+- **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed), or a ZIP of such PDFs — the ZIP is expanded in the browser and each PDF joins the same queue and pipeline (enforced with a real per-entry/total decompressed budget).
 - **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of image references. Each reference is either an http(s) URL or the name of a file inside an optional ZIP of label images uploaded alongside the CSV — so artwork on disk can be verified without hosting it. The app reads and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of local files against the ZIP, and a downloadable template.
 - **Pre-flight detection** — on upload, each PDF is inspected in the browser to confirm it contains both a filled Part I and an affixed label. Documents missing a piece, or read with low confidence, are flagged for review with a plain-language reason and an explicit "Process anyway" override. This is advisory guidance for the agent, not a gate (see Limitations).
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
@@ -219,6 +219,9 @@ CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for CSV labels (
 CSV_IMAGE_FETCH_TIMEOUT_MS=15000 # optional; per-image fetch timeout for the CSV URL path
 CSV_MAX_IMAGES_PER_ROW=6         # optional; max label image references per CSV row
 CSV_IMAGE_ZIP_MAX_BYTES=104857600 # optional; max uploaded image-ZIP size (default 100 MiB)
+PDF_ZIP_MAX_BYTES=209715200       # optional; max dropped PDF-ZIP size, compressed (default 200 MiB)
+PDF_ZIP_MAX_ENTRY_BYTES=52428800  # optional; max decompressed size of one PDF in the ZIP (default 50 MiB)
+PDF_ZIP_MAX_TOTAL_BYTES=524288000 # optional; max total decompressed PDFs from one ZIP (default 500 MiB)
 ```
 `.env.local` is gitignored and read only in local development.
 
@@ -259,7 +262,7 @@ The schema is created on the first request (idempotent migration). If a reverse 
 - **Cloud model vs. network policy.** The prototype calls a hosted model API. In a restricted federal network this traffic may be blocked; production deployment would need the endpoint allow-listed or an in-network model. This is the single most likely thing to break a real deployment.
 - **CSV image fetching is server-side and only lightly guarded.** When a row references images by URL, the server fetches arbitrary URLs. There is a best-effort SSRF guard (http(s) only; loopback, link-local, and RFC-1918 hosts rejected) and size/timeout caps, but it is not DNS-rebinding-proof. A production deployment should front it with an allow-list or an egress proxy. The ZIP option avoids outbound fetches entirely and is the safer choice in a locked-down network. Net-contents and ABV still come from the label image, not the CSV, so a CSV row can't assert compliance values directly.
 - **The CSV image ZIP is fully decompressed in memory.** Both the server (resolve) and the client (pre-flight cross-check) expand the whole archive, bounded only by a blunt compressed-size cap (`CSV_IMAGE_ZIP_MAX_BYTES`) — not a decompressed-size budget, so it is not hardened against a crafted "zip bomb." Production should stream-extract with a hard per-entry and total decompressed limit.
-- **PDF-tab ZIP archives are not expanded in the browser build.** The ZIP support added for CSV label images does not cover the PDF tab; that tab still asks the user to extract combined PDFs first.
+- **PDF-tab ZIP expansion is in-browser and synchronous.** A dropped ZIP of combined PDFs is decompressed client-side (`lib/zipPdfs.ts`) before the run; a very large archive briefly blocks the UI thread during extraction. Unlike the CSV image ZIP, it enforces a real decompressed budget (per-entry and total, checked from ZIP metadata before each entry is expanded), so it is hardened against a crafted "zip bomb." Only `.zip` is supported (not 7z/rar/tar/gz).
 - **Long batches need a streaming-friendly proxy.** Processing runs in one streaming request. A long-running Node server has no function timeout, so large batches complete fine — but any reverse proxy in front must have response buffering disabled (the route sets `X-Accel-Buffering: no` for nginx) or results won't stream incrementally.
 - **No COLA integration.** By design. Results inform a potential future workflow; they are not written back to any system of record.
 
