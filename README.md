@@ -1,6 +1,6 @@
 # TTB Label Verification — Prototype
 
-An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads one or more combined application PDFs; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted two ways: as combined PDFs, or — for bulk runs — as a CSV of application data whose label images are given by URL or by file name in an uploaded ZIP.
+An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads combined application documents; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted three ways: as a combined PDF, as a flat image (JPG/PNG) of one, or — for bulk runs — as a CSV of application data whose label images are given by URL or by file name in an uploaded ZIP.
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
@@ -120,13 +120,15 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 **Core library (`lib/`).** Framework-independent and unit-testable:
 - `schema.ts` — types, the field→matcher rule config, product-type rulesets, the canonical warning text.
 - `prompts.ts` — the label and form extraction prompts.
-- `pdf-first-page.ts` — slices the form to page 1 (hard guard against extra pages) and the label to its artwork (image-bearing) pages, to cut vision-input tokens.
+- `mediaType.ts` — pure: classifies a file name (PDF / image / ZIP) and maps an image to its media type; the single source both intakes use to decide PDF-vs-image handling.
+- `pdf-first-page.ts` — slices the form to page 1 (hard guard against extra pages) and the label to its artwork (image-bearing) pages, to cut vision-input tokens. PDFs only — a flat image isn't sliced; the one image goes to both parsers.
 - `detection-rules.ts` / `detect-client.ts` — structural region detection (pure heuristic + browser adapter). Advisory pre-flight only; see Detection under Limitations.
 - `extraction.ts` — one shared vision-model integration; model is a per-call parameter. Accepts one image or several to transcribe together as a single subject.
 - `parsers.ts` — the label and form parsers (prompt + validator pairs); `parseLabel` takes one image or an array (the CSV path's multi-view labels).
 - `csvParse.ts` — pure CSV tokenizer + per-row validation → application data + image references (URLs or ZIP file names; reused on the client for the pre-submit preview).
 - `imageFetch.ts` — resolves label-image references into model inputs: http(s) URLs are fetched (size / timeout caps + a best-effort SSRF guard), ZIP file names are read from the in-memory archive index.
 - `zipImages.ts` — pure: expands an uploaded image ZIP into a path/basename → bytes index, shared by the server (resolve) and the client (pre-flight cross-check).
+- `zipDocs.ts` — pure: expands a ZIP dropped on the upload tab into its PDF/image entries (browser-side), enforcing a real per-entry/total decompressed budget. Each entry becomes an ordinary work item.
 - `matching.ts` — the three matchers + the dispatcher.
 - `orchestration.ts` — `runPool`, the concurrency-capped streaming worker pool, plus the PDF per-item pipeline.
 - `csvOrchestration.ts` — the CSV per-item pipeline (fetch images → transcribe → match → persist), run through the same `runPool`.

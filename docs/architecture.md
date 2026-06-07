@@ -35,7 +35,7 @@ flowchart LR
         imgs["Label image hosts<br/>(CSV URL intake only)"]
     end
 
-    agent -->|"upload PDFs / CSV, read verdicts"| ui
+    agent -->|"upload PDFs / images / CSV, read verdicts"| ui
     ui -->|"persist + query"| db
     ui -->|"HTTPS outbound — needs allow-listing"| model
     ui -->|"fetch images (best-effort SSRF guard)"| imgs
@@ -52,11 +52,14 @@ Notes:
 
 ## 2. Components
 
-Two intake fronts — **PDF** and **CSV** — converge on one shared spine
-(`runPool` → `matching.verify` → `persistence`). The CSV path only swaps the
-*front*: application data comes from columns instead of a form model-read, and
-label images are resolved from URLs/ZIP instead of sliced from a PDF. From
-matching onward the two paths are identical.
+Two intake fronts — the **upload tab** (combined PDFs or flat images) and
+**CSV** — converge on one shared spine (`runPool` → `matching.verify` →
+`persistence`). On the upload front a PDF is sliced (page 1 = form, artwork pages
+= label) while an image can't be, so the one image is read by both parsers; a
+dropped ZIP is expanded client-side (`zipDocs`) into individual PDF/image items.
+The CSV path swaps the *front* entirely: application data comes from columns and
+label images are resolved from URLs/ZIP. From matching onward all paths are
+identical.
 
 ```mermaid
 %%{init: {'flowchart': {'rankSpacing': 50, 'nodeSpacing': 60}}}%%
@@ -79,7 +82,9 @@ flowchart LR
     subgraph core["Core library (lib/) — framework-free, unit-tested"]
         orch["orchestration<br/>processBatch · runPool · processOne"]
         csvorch["csvOrchestration<br/>processCsvBatch · processOneCsv"]
-        slice["pdfFirstPage<br/>extractFirstPage · extractLabelArtwork"]
+        slice["pdfFirstPage<br/>extractFirstPage · extractLabelArtwork (PDF only)"]
+        zipdocs["zipDocs (pure)<br/>expand upload ZIP → PDF/image items"]
+        mediatype["mediaType (pure)<br/>name → PDF / image / ZIP + media type"]
         csvparse["csvParse<br/>columns → ApplicationData + image refs"]
         imgs["imageFetch · zipImages<br/>resolve label images (URL / ZIP)"]
         parsers["parsers<br/>parseLabel · parseForm"]
@@ -96,18 +101,23 @@ flowchart LR
     model["Anthropic model API"]
 
     tabs --> pdfui & csvui
-    pdfui -->|"multipart PDFs"| rverify
+    pdfui -->|"multipart PDFs / images"| rverify
     csvui -->|"CSV + optional ZIP"| rcsv
     search --> rsearch
-    pdfui -. advisory .-> detect
+    pdfui -. advisory, PDF only .-> detect
+    pdfui -. expand ZIP .-> zipdocs
     detect --> detrules
 
     rverify --> orch
+    rverify -->|"infer media type"| mediatype
     rcsv --> csvorch
     rsearch --> persistence
     rresult --> persistence
 
     orch --> slice & parsers
+    zipdocs --> mediatype
+    csvparse --> mediatype
+    imgs --> mediatype
     csvorch --> csvparse & imgs & parsers
     orch -->|"runPool"| matching
     csvorch -->|"runPool"| matching
@@ -128,17 +138,23 @@ Reading aids:
   model id is a per-call argument (label defaults to a faster tier, form to the
   general one; see `config.ts`).
 - **`detectClient` is advisory only** and runs in the browser; it never gates
-  server-side processing.
+  server-side processing. It is PDF-structure-based, so image uploads skip it and
+  queue straight to ready.
+- **An image is an un-sliceable PDF.** `mediaType` (the single source of file-type
+  knowledge, shared by the route, `zipDocs`, `csvParse`, and `imageFetch`) tells
+  `processOne` whether to slice the PDF or feed the one image to both parsers. No
+  separate image route or parser exists — only the media type differs.
 - **`persistence` is a barrel** — the rest of the app imports from it, not from
   `db`/`persistWrite`/`persistQuery` directly.
 
 ---
 
-## 3. Verification sequence (one PDF application)
+## 3. Verification sequence (one PDF or image application)
 
 The runtime view: detect → slice → transcribe (two models,
 concurrently) → judge → persist → stream, with results flowing back per item
-rather than after the whole batch (the per-label latency requirement).
+rather than after the whole batch (the per-label latency requirement). Detect and
+slice are PDF-only steps; an image skips both and is read whole by both parsers.
 
 ```mermaid
 sequenceDiagram
@@ -151,15 +167,17 @@ sequenceDiagram
     participant Judge as matching.verify
     participant DB as Postgres
 
-    Agent->>UI: drop combined PDF(s)
-    UI->>UI: detectClient — advisory Form/Label chips
+    Agent->>UI: drop combined PDF(s) or image(s)
+    UI->>UI: detectClient — advisory Form/Label chips (PDF only)
     Agent->>API: process queued applications (multipart)
-    API->>API: migrate(), then build the work list
+    API->>API: migrate(), infer media type per file, build the work list
 
     loop each application (bounded concurrency)
         API->>Pool: processOne(item)
-        Pool->>Slice: extractFirstPage (form → page 1)
-        Pool->>Slice: extractLabelArtwork (label → image pages)
+        opt PDF input (an image skips slicing — one image feeds both parsers)
+            Pool->>Slice: extractFirstPage (form → page 1)
+            Pool->>Slice: extractLabelArtwork (label → image pages)
+        end
         par label + form, concurrently
             Pool->>Model: parseLabel (Haiku)
         and
@@ -176,6 +194,10 @@ sequenceDiagram
     end
     API-->>UI: summary
 ```
+
+**Image variant.** Same diagram with the `opt` slicing block skipped: the one
+uploaded image (which shows the whole application) is fed verbatim to both the
+label and form parsers. Everything from transcription onward is identical.
 
 **CSV variant.** Same diagram with the front swapped: instead of slicing a PDF
 and model-reading the form, `csvParse` turns the row's columns into the
