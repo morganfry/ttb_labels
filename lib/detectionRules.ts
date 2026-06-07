@@ -28,8 +28,17 @@ export interface DetectionSignals {
     imageCount: number;
 }
 
-/** COLA template markers; ≥2 hits is a confident "this is a 5100.31". */
-const FORM_MARKERS = ["5100.31", "PART I", "BRAND NAME", "OMB NO. 1513-0020", "CERTIFICATION/EXEMPTION"];
+/**
+ * TTB F 5100.31 template strings; ≥2 hits (whitespace-normalized) is a confident
+ * "this is a COLA form". The form number and agency name are the most specific;
+ * the field labels add margin. Markers like "PART I" and "OMB NO. 1513-0020" are
+ * deliberately omitted — the template splits them across text runs, so they never
+ * survive extraction and would only weaken the signal.
+ */
+const FORM_MARKERS = [
+    "5100.31", "ALCOHOL AND TOBACCO TAX", "BRAND NAME", "SERIAL NUMBER",
+    "PLANT REGISTRY", "TYPE OF PRODUCT", "NET CONTENTS", "CERTIFICATION",
+];
 
 /**
  * Apply the heuristic. Conservative by design: when a signal is ambiguous it
@@ -38,7 +47,9 @@ const FORM_MARKERS = ["5100.31", "PART I", "BRAND NAME", "OMB NO. 1513-0020", "C
  */
 export function evaluateRegions(signals: DetectionSignals): RegionDetection {
     const notes: string[] = [];
-    const up = signals.text.toUpperCase();
+    // Normalize whitespace: PDF text extraction can leave odd spacing between
+    // words, so collapse runs to a single space before matching multi-word markers.
+    const up = signals.text.toUpperCase().replace(/\s+/g, " ");
 
     const hits = FORM_MARKERS.filter((m) => up.includes(m)).length;
     let hasForm = hits >= 2;
@@ -62,8 +73,3 @@ export function evaluateRegions(signals: DetectionSignals): RegionDetection {
 
     return { hasForm, formConfidence, hasLabel, labelConfidence, status, notes };
 }
-
-/** Regex for embedded image XObjects, shared by both adapters. */
-export const IMAGE_XOBJECT_RE = /\/Subtype\s*\/Image/gi;
-/** Heuristic for "has a text layer", shared by both adapters. */
-export const TEXT_LAYER_RE = /\/Font|\/Text|BT\s/i;
