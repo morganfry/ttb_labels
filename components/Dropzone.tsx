@@ -39,8 +39,8 @@ export function Dropzone({ onFiles }: { onFiles: (files: FileList) => void }) {
         >
             <Upload size={40} strokeWidth={1.5} className={`mx-auto mb-3 ${dragging ? "text-blue-600" : "text-slate-500"}`} />
             <div className="text-lg font-semibold">{dragging ? "Drop files to add them" : "Drag files here, or click to browse"}</div>
-            <div className="text-sm text-slate-400">Combined application PDFs (TTB Form 5100.31, OMB No. 1513-0020), or a ZIP folder of them</div>
-            <input ref={inputRef} type="file" multiple accept=".pdf,.zip" className="hidden"
+            <div className="text-sm text-slate-400">Combined application PDFs or images (TTB Form 5100.31, OMB No. 1513-0020), or a ZIP folder of them</div>
+            <input ref={inputRef} type="file" multiple accept=".pdf,.zip,.png,.jpg,.jpeg,.webp,.gif" className="hidden"
                    onChange={(e) => { if (e.target.files) onFiles(e.target.files); e.target.value = ""; }} />
         </div>
     );

@@ -3,9 +3,9 @@
 import { useReducer, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
-import { uid, isPdf, isZip, OVERALL_META } from "@/lib/uiTypes";
+import { uid, isPdf, isImage, isZip, OVERALL_META } from "@/lib/uiTypes";
 import { config } from "@/lib/config";
-import { extractZipPdfs } from "@/lib/zipPdfs";
+import { extractZipDocs } from "@/lib/zipDocs";
 import { detectOne } from "@/lib/detectClient";
 import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
@@ -64,22 +64,27 @@ export default function VerificationApp() {
     const { items, processing, processError, notice } = state;
     useRegisterProcessing(processing); // warn on navigation while a run is active
 
-    // Add PDFs as work items and kick off region detection for each. `fromZip`
-    // tags those that came out of an archive (for display only).
-    const addPdfs = useCallback((files: File[], fromZip: string | null) => {
-        const incoming: Item[] = files.map((f) => ({
-            id: uid(), name: f.name, kind: "pdf", fromZip, status: "detecting", result: null, file: f, detection: null,
-        }));
+    // Add applications (PDFs and/or images) as work items. PDFs get a browser
+    // pre-flight (region detection); a flat image can't be sliced or inspected
+    // that way, so it goes straight to "queued". `fromZip` tags those that came
+    // out of an archive (display only).
+    const addDocs = useCallback((files: File[], fromZip: string | null) => {
+        const incoming: Item[] = files.map((f) => {
+            const kind: Item["kind"] = isPdf(f.name) ? "pdf" : "image";
+            return kind === "pdf"
+                ? { id: uid(), name: f.name, kind, fromZip, status: "detecting", result: null, file: f, detection: null }
+                : { id: uid(), name: f.name, kind, fromZip, status: "queued", result: null, file: f };
+        });
         if (!incoming.length) return;
         dispatch({ type: "add", items: incoming });
-        incoming.forEach((it) => {
+        incoming.filter((it) => it.kind === "pdf").forEach((it) => {
             detectOne(it.file!).then((detection) => {
                 dispatch({ type: "detected", id: it.id, detection, status: detection.status === "ready" ? "queued" : "review" });
             });
         });
     }, []);
 
-    // Expand a dropped ZIP in the browser; its PDFs join the same queue/pipeline.
+    // Expand a dropped ZIP in the browser; its PDFs/images join the same pipeline.
     const ingestZip = useCallback(async (file: File) => {
         const limitMb = Math.round(config.pdfZipMaxBytes / (1024 * 1024));
         if (file.size > config.pdfZipMaxBytes) {
@@ -90,7 +95,7 @@ export default function VerificationApp() {
         await new Promise((r) => setTimeout(r, 0)); // let the notice paint before the synchronous unzip
         let result;
         try {
-            result = extractZipPdfs(new Uint8Array(await file.arrayBuffer()), {
+            result = extractZipDocs(new Uint8Array(await file.arrayBuffer()), {
                 maxEntryBytes: config.pdfZipMaxEntryBytes,
                 maxTotalBytes: config.pdfZipMaxTotalBytes,
             });
@@ -98,27 +103,28 @@ export default function VerificationApp() {
             dispatch({ type: "notice", message: `Couldn't read ${file.name} — not a valid ZIP.` });
             return;
         }
-        if (!result.pdfs.length) {
+        if (!result.docs.length) {
             dispatch({ type: "notice", message: result.skipped.length
-                ? `${file.name}: every PDF exceeded the size limit and was skipped.`
-                : `${file.name} contained no PDFs.` });
+                ? `${file.name}: every file exceeded the size limit and was skipped.`
+                : `${file.name} contained no PDFs or images.` });
             return;
         }
-        addPdfs(result.pdfs.map((p) => new File([p.bytes as BlobPart], p.name, { type: "application/pdf" })), file.name);
-        const n = result.pdfs.length;
+        addDocs(result.docs.map((d) =>
+            new File([d.bytes as BlobPart], d.name, { type: d.kind === "pdf" ? "application/pdf" : "image/*" })), file.name);
+        const n = result.docs.length;
         dispatch({ type: "notice", message: result.skipped.length
-            ? `Added ${n} PDF${n === 1 ? "" : "s"} from ${file.name}; skipped ${result.skipped.length} oversized.`
+            ? `Added ${n} file${n === 1 ? "" : "s"} from ${file.name}; skipped ${result.skipped.length} oversized.`
             : null });
-    }, [addPdfs]);
+    }, [addDocs]);
 
     const addFiles = useCallback((fileList: FileList) => {
-        const pdfs: File[] = [];
+        const docs: File[] = [];
         for (const f of Array.from(fileList)) {
-            if (isPdf(f.name)) pdfs.push(f);
+            if (isPdf(f.name) || isImage(f.name)) docs.push(f);
             else if (isZip(f.name)) void ingestZip(f);
         }
-        addPdfs(pdfs, null);
-    }, [addPdfs, ingestZip]);
+        addDocs(docs, null);
+    }, [addDocs, ingestZip]);
 
     const removeItem = (id: string) => dispatch({ type: "remove", id });
     const overrideToReady = (id: string) => dispatch({ type: "override", id });
@@ -131,7 +137,7 @@ export default function VerificationApp() {
     };
 
     const runVerification = async () => {
-        const pending = items.filter((it) => it.kind === "pdf" && it.status === "queued");
+        const pending = items.filter((it) => (it.kind === "pdf" || it.kind === "image") && it.status === "queued");
         if (pending.length === 0) return;
         dispatch({ type: "runStart", ids: pending.map((it) => it.id) });
 
@@ -172,15 +178,15 @@ export default function VerificationApp() {
         }
     };
 
-    const pdfItems = items.filter((it) => it.kind === "pdf");
-    const queuedCount = pdfItems.filter((it) => it.status === "queued").length;
-    const reviewCount = pdfItems.filter((it) => it.status === "review").length;
-    const detectingCount = pdfItems.filter((it) => it.status === "detecting").length;
-    const doneCount = pdfItems.filter((it) => it.status === "done").length;
+    const docItems = items.filter((it) => it.kind === "pdf" || it.kind === "image");
+    const queuedCount = docItems.filter((it) => it.status === "queued").length;
+    const reviewCount = docItems.filter((it) => it.status === "review").length;
+    const detectingCount = docItems.filter((it) => it.status === "detecting").length;
+    const doneCount = docItems.filter((it) => it.status === "done").length;
     const hasResults = doneCount > 0;
-    const allDone = pdfItems.length > 0 && doneCount === pdfItems.length;
+    const allDone = docItems.length > 0 && doneCount === docItems.length;
 
-    const summary = pdfItems.reduce((a: Record<string, number>, it) => {
+    const summary = docItems.reduce((a: Record<string, number>, it) => {
         if (it.result) a[it.result.overall] = (a[it.result.overall] || 0) + 1;
         return a;
     }, {});
@@ -200,7 +206,7 @@ export default function VerificationApp() {
                 )}
 
                 {items.length > 0 && (
-                    <FileQueue items={items} pdfCount={pdfItems.length} disabled={processing}
+                    <FileQueue items={items} pdfCount={docItems.length} disabled={processing}
                                onRemove={removeItem} onOverride={overrideToReady} onClear={reset} />
                 )}
 
@@ -215,9 +221,9 @@ export default function VerificationApp() {
                         {processing ? (
                             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5">
                                 <Loader2 size={22} className="animate-spin text-blue-600" />
-                                <span className="whitespace-nowrap text-base font-medium">Processing… {doneCount} of {pdfItems.length} done</span>
+                                <span className="whitespace-nowrap text-base font-medium">Processing… {doneCount} of {docItems.length} done</span>
                                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
-                                    <div className="h-full rounded-full bg-blue-600 transition-[width] duration-300" style={{ width: `${(doneCount / pdfItems.length) * 100}%` }} />
+                                    <div className="h-full rounded-full bg-blue-600 transition-[width] duration-300" style={{ width: `${(doneCount / docItems.length) * 100}%` }} />
                                 </div>
                             </div>
                         ) : (
@@ -248,7 +254,7 @@ export default function VerificationApp() {
                     </div>
                 )}
 
-                {hasResults && <ResultsTable items={pdfItems.filter((it) => it.result)} />}
+                {hasResults && <ResultsTable items={docItems.filter((it) => it.result)} />}
         </>
     );
 }

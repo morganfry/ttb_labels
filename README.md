@@ -8,8 +8,8 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Features
 
-- **Two ingestion modes** — the Verify screen has a **PDF upload** tab and a **CSV bulk** tab. PDF mode reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or files in an uploaded ZIP). Both feed the identical matching, persistence, and results pipeline.
-- **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed), or a ZIP of such PDFs — the ZIP is expanded in the browser and each PDF joins the same queue and pipeline (enforced with a real per-entry/total decompressed budget).
+- **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or files in an uploaded ZIP). Both feed the identical matching, persistence, and results pipeline.
+- **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed) **or a flat image (JPG/PNG/WebP/GIF)** of one — a PDF is sliced (page 1 = form, artwork pages = label), while an image (which can't be sliced) is read whole by both parsers. Also accepts a ZIP of such files — expanded in the browser, each file joins the same queue and pipeline (with a real per-entry/total decompressed budget).
 - **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of image references. Each reference is either an http(s) URL or the name of a file inside an optional ZIP of label images uploaded alongside the CSV — so artwork on disk can be verified without hosting it. The app reads and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of local files against the ZIP, and a downloadable template.
 - **Pre-flight detection** — on upload, each PDF is inspected in the browser to confirm it contains both a filled Part I and an affixed label. Documents missing a piece, or read with low confidence, are flagged for review with a plain-language reason and an explicit "Process anyway" override. This is advisory guidance for the agent, not a gate (see Limitations).
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
@@ -78,11 +78,12 @@ On the **Review History** screen, the most recent reviews load automatically. Na
 ### Request flow (one application)
 
 ```
-Upload (combined PDF)
+Upload (combined PDF or image)
    │
    ▼
 [1] Detect regions      structural check: filled Part I? affixed label?
    │                    (cheap, no model call; flags ambiguous docs)
+   │                    (PDFs only — images skip [1] and [2])
    ▼
 [2] Slice                form Part I → page 1 only (model never sees the
    │                     instruction / certification / revision pages);
@@ -102,6 +103,8 @@ Upload (combined PDF)
 [6] Stream              result returned per-item; table fills row by row
 ```
 
+An **image upload** takes the same path with steps [1]–[2] skipped: a flat image can't be detected or sliced, so the one image — which must show the whole application — is fed to both parsers at step [3] verbatim. From matching on, it is identical to the PDF path.
+
 The **CSV path** is the same pipeline with the front end of it swapped: steps [1]–[3] (detect / slice / form-extract) are replaced by reading the application (Part I) values straight from CSV columns and fetching the label images from their URLs. From step [3]'s label extraction onward — transcription, confidence-gated matching, persistence, streaming — both paths are identical and share the same worker pool. The "model transcribes; code judges" invariant is preserved: only the *form* extraction is replaced by explicit columns; the label is still model-read from the fetched images (one model call per row, with every image for that row sent together).
 
 ### Layers
@@ -109,7 +112,7 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 **Frontend (Next.js App Router, React, Tailwind).** Two screens — `/` (Verify) and `/search` (Review History) — composed from small components. Shared display constants and the `OverallBadge` / `FieldCards` components are imported by both screens so verdicts look identical everywhere. Client-side region detection runs before upload; processing is driven by a streaming `fetch` to the API.
 
 **API routes (Node runtime).**
-- `POST /api/verify` — accepts the uploaded PDFs as multipart form data, runs the batch, and streams results back as newline-delimited JSON (NDJSON), one line per finished application.
+- `POST /api/verify` — accepts the uploaded files (PDFs and/or images) as multipart form data, infers each one's media type from its name, runs the batch, and streams results back as newline-delimited JSON (NDJSON), one line per finished application.
 - `POST /api/verify-csv` — accepts a CSV file (and an optional `images` ZIP) as multipart form data, parses it to per-row application data + image references, indexes the ZIP into memory, and streams results in the same NDJSON format (so the client renders both paths identically). Invalid rows are reported in the stream rather than dropped.
 - `GET /api/search` — queries stored verdicts with combinable filters and pagination.
 - `GET /api/results/[id]` — fetches one full result (summary + all field rows) for the detail view.
@@ -262,7 +265,8 @@ The schema is created on the first request (idempotent migration). If a reverse 
 - **Cloud model vs. network policy.** The prototype calls a hosted model API. In a restricted federal network this traffic may be blocked; production deployment would need the endpoint allow-listed or an in-network model. This is the single most likely thing to break a real deployment.
 - **CSV image fetching is server-side and only lightly guarded.** When a row references images by URL, the server fetches arbitrary URLs. There is a best-effort SSRF guard (http(s) only; loopback, link-local, and RFC-1918 hosts rejected) and size/timeout caps, but it is not DNS-rebinding-proof. A production deployment should front it with an allow-list or an egress proxy. The ZIP option avoids outbound fetches entirely and is the safer choice in a locked-down network. Net-contents and ABV still come from the label image, not the CSV, so a CSV row can't assert compliance values directly.
 - **The CSV image ZIP is fully decompressed in memory.** Both the server (resolve) and the client (pre-flight cross-check) expand the whole archive, bounded only by a blunt compressed-size cap (`CSV_IMAGE_ZIP_MAX_BYTES`) — not a decompressed-size budget, so it is not hardened against a crafted "zip bomb." Production should stream-extract with a hard per-entry and total decompressed limit.
-- **PDF-tab ZIP expansion is in-browser and synchronous.** A dropped ZIP of combined PDFs is decompressed client-side (`lib/zipPdfs.ts`) before the run; a very large archive briefly blocks the UI thread during extraction. Unlike the CSV image ZIP, it enforces a real decompressed budget (per-entry and total, checked from ZIP metadata before each entry is expanded), so it is hardened against a crafted "zip bomb." Only `.zip` is supported (not 7z/rar/tar/gz).
+- **Upload-tab ZIP expansion is in-browser and synchronous.** A dropped ZIP of PDFs and/or images is decompressed client-side (`lib/zipDocs.ts`) before the run; a very large archive briefly blocks the UI thread during extraction. Unlike the CSV image ZIP, it enforces a real decompressed budget (per-entry and total, checked from ZIP metadata before each entry is expanded), so it is hardened against a crafted "zip bomb." Only `.zip` is supported (not 7z/rar/tar/gz).
+- **Image intake assumes the whole application is in one image, and skips slicing and pre-flight.** A flat JPG/PNG can't be split into form/label regions, so the single image is sent to both parsers as-is — it must therefore show the filled Part I *and* the affixed label. There is no page-1 slice and no browser pre-flight detection (both are PDF-structure-based) for images; the prompt scope guards and the confidence-gated matcher remain the safeguards. Multi-page applications are better submitted as PDFs.
 - **Long batches need a streaming-friendly proxy.** Processing runs in one streaming request. A long-running Node server has no function timeout, so large batches complete fine — but any reverse proxy in front must have response buffering disabled (the route sets `X-Accel-Buffering: no` for nginx) or results won't stream incrementally.
 - **No COLA integration.** By design. Results inform a potential future workflow; they are not written back to any system of record.
 

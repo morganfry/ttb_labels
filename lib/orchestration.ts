@@ -10,16 +10,25 @@
 import { extractFirstPage, extractLabelArtwork, toBase64 } from "./pdfFirstPage";
 import { parseLabel, parseForm, type FormExtraction } from "./parsers";
 import { verify } from "./matching";
-import { ExtractionError } from "./extraction";
+import { ExtractionError, type ExtractionInput, type MediaType } from "./extraction";
 import { config } from "./config";
 import type { VerificationResult, ApplicationData, Confidence } from "./schema";
 
-/** One unit of work: a label PDF and its COLA form PDF (page 1 used). */
+/**
+ * One unit of work — one application as a combined document. Two intake shapes:
+ *  - PDF (mediaType "application/pdf", the default): the SAME file is given as
+ *    both `labelPdf` and `formPdf`; the orchestrator slices page 1 for the form
+ *    and the artwork pages for the label.
+ *  - Image (mediaType "image/*"): a flat image showing the whole application;
+ *    it can't be sliced, so the one image is read by BOTH parsers as-is.
+ */
 export interface WorkItem {
     id: string;
     name: string;
     labelPdf: Uint8Array;
     formPdf: Uint8Array;
+    /** Defaults to "application/pdf"; an image type switches off PDF slicing. */
+    mediaType?: MediaType;
 }
 
 /** Discriminated union — success carries the verdict, failure carries a
@@ -140,14 +149,27 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     const start = Date.now();
     const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start });
 
-    // Hard guard: only page 1 (Part I) of the form reaches the model.
-    let formBytes: Uint8Array;
-    try { formBytes = (await extractFirstPage(item.formPdf)).bytes; }
-    catch (e) { return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false }); }
-
-    // Send the label parser only the artwork pages, not the whole document —
-    // fewer image tokens, lower latency. Never throws; falls back to the whole PDF.
-    const labelBytes = (await extractLabelArtwork(item.labelPdf)).bytes;
+    // Resolve each parser's input. PDFs are sliced (page 1 → form, artwork pages
+    // → label) so the model never sees boilerplate pages. A flat image can't be
+    // sliced, so the one image — which shows the whole application — is fed to
+    // both parsers verbatim.
+    let labelInput: ExtractionInput, formInput: ExtractionInput;
+    const mediaType: MediaType = item.mediaType ?? "application/pdf";
+    if (mediaType === "application/pdf") {
+        // Hard guard: only page 1 (Part I) of the form reaches the model.
+        let formBytes: Uint8Array;
+        try { formBytes = (await extractFirstPage(item.formPdf)).bytes; }
+        catch (e) { return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false }); }
+        // Only the artwork pages — fewer image tokens, lower latency. Never
+        // throws; falls back to the whole PDF.
+        const labelBytes = (await extractLabelArtwork(item.labelPdf)).bytes;
+        formInput = { base64: toBase64(formBytes), mediaType: "application/pdf" };
+        labelInput = { base64: toBase64(labelBytes), mediaType: "application/pdf" };
+    } else {
+        const base64 = toBase64(item.formPdf); // image: label and form bytes are the one image
+        formInput = { base64, mediaType };
+        labelInput = { base64, mediaType };
+    }
 
     // Parsers are injectable (default: real model-backed). Label and form are
     // independent calls — run concurrently to roughly halve per-item latency,
@@ -157,8 +179,8 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     const labelModel = opts.labelModel ?? opts.model ?? config.labelModel;
     const formModel = opts.formModel ?? opts.model ?? config.formModel;
     const [labelRes, formRes] = await Promise.allSettled([
-        label({ base64: toBase64(labelBytes), mediaType: "application/pdf" }, labelModel),
-        form({ base64: toBase64(formBytes), mediaType: "application/pdf" }, formModel),
+        label(labelInput, labelModel),
+        form(formInput, formModel),
     ]);
 
     if (labelRes.status === "rejected") return fail(classifyExtraction(labelRes.reason, "label"));

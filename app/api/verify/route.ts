@@ -8,6 +8,7 @@
  * latency expectation.
  */
 import { processBatch, type WorkItem, type ItemOutcome } from "@/lib/orchestration";
+import { workItemMediaType } from "@/lib/mediaType";
 import { saveResult, migrate } from "@/lib/persistence";
 
 export const runtime = "nodejs";   // needs Buffer / pdf-lib (not edge)
@@ -29,8 +30,10 @@ export async function POST(req: Request): Promise<Response> {
     if (!Array.isArray(pairs) || pairs.length === 0)
         return json({ error: "Missing or invalid `pairs` manifest." }, 400);
 
-    // Combined-PDF model: the same uploaded file serves as both label and form
-    // (two regions of one document); the parsers read different parts of it.
+    // Combined-document model: the same uploaded file serves as both label and
+    // form (two regions of one document); the parsers read different parts of it.
+    // A PDF is sliced downstream; an image (media type inferred from the name) is
+    // read whole by both parsers.
     const items: WorkItem[] = [];
     for (const p of pairs) {
         const labelFile = form.get(`label_${p.id}`);
@@ -40,9 +43,10 @@ export async function POST(req: Request): Promise<Response> {
             id: p.id, name: p.name,
             labelPdf: new Uint8Array(await labelFile.arrayBuffer()),
             formPdf: new Uint8Array(await formFile.arrayBuffer()),
+            mediaType: workItemMediaType(p.name),
         });
     }
-    if (items.length === 0) return json({ error: "No valid label/form pairs found in upload." }, 400);
+    if (items.length === 0) return json({ error: "No valid files found in upload." }, 400);
 
     const encoder = new TextEncoder();
     // Cancel the batch if the client disconnects, so we don't keep paying for

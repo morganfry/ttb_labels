@@ -26,7 +26,7 @@ export interface ZipImageIndex {
 }
 
 /** Archive cruft some zip tools add; never a real entry. Shared with the PDF
- *  ZIP path (zipPdfs.ts) so both intakes skip the same junk. */
+ *  ZIP path (zipDocs.ts) so both intakes skip the same junk. */
 export const ZIP_JUNK_RE = /(^|\/)(__MACOSX\/|\.DS_Store$|Thumbs\.db$)/i;
 
 /** Canonicalize a path or CSV reference: backslashes → "/", drop "./" and any

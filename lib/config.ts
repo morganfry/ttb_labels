@@ -37,10 +37,11 @@ export const config = {
     /* Cap on the uploaded image-ZIP (compressed) — a blunt zip-bomb mitigation,
      * since extraction decompresses the whole archive into memory. */
     csvImageZipMaxBytes: intFromEnv("CSV_IMAGE_ZIP_MAX_BYTES", 100 * 1024 * 1024),
-    /* PDF bulk path: a dropped ZIP of combined-application PDFs is expanded in
-     * the browser (zipPdfs.ts). pdfZipMaxBytes guards the compressed upload; the
-     * per-entry/total caps are a REAL decompressed budget enforced before each
-     * entry is expanded, so these bound RAM even against a crafted archive. */
+    /* PDF/image bulk path: a dropped ZIP of applications (combined PDFs and/or
+     * images) is expanded in the browser (zipDocs.ts). pdfZipMaxBytes guards the
+     * compressed upload; the per-entry/total caps are a REAL decompressed budget
+     * enforced before each entry is expanded, so these bound RAM even against a
+     * crafted archive. */
     pdfZipMaxBytes: intFromEnv("PDF_ZIP_MAX_BYTES", 200 * 1024 * 1024),
     pdfZipMaxEntryBytes: intFromEnv("PDF_ZIP_MAX_ENTRY_BYTES", 50 * 1024 * 1024),
     pdfZipMaxTotalBytes: intFromEnv("PDF_ZIP_MAX_TOTAL_BYTES", 500 * 1024 * 1024),

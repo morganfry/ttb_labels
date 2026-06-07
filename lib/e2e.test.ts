@@ -90,4 +90,24 @@ describe("end-to-end pipeline (stubbed parsers)", () => {
         });
         expect(outcomes[0].ok).toBe(false);
     });
+
+    it("image items skip PDF slicing and feed the one image to both parsers", async () => {
+        // Deliberately NOT a PDF: if slicing ran, extractFirstPage would throw.
+        const imageBytes = new TextEncoder().encode("\x89PNG\r\n\x1a\n fake png");
+        const item: WorkItem = { id: "1", name: "app.png", labelPdf: imageBytes, formPdf: imageBytes, mediaType: "image/png" };
+        const seen: { label?: unknown; form?: unknown } = {};
+        const outcomes: ItemOutcome[] = [];
+        await processBatch([item], {
+            onResult: (o) => outcomes.push(o),
+            parsers: {
+                parseLabel: vi.fn(async (input) => { seen.label = input; return ok(SCENARIOS[0].label); }),
+                parseForm: vi.fn(async (input) => { seen.form = input; return ok(SCENARIOS[0].form); }),
+            },
+        });
+        expect(outcomes[0].ok).toBe(true);
+        // Both parsers get the image verbatim, with the image media type.
+        expect(seen.label).toEqual({ base64: expect.any(String), mediaType: "image/png" });
+        expect(seen.form).toEqual({ base64: expect.any(String), mediaType: "image/png" });
+        expect((seen.label as { base64: string }).base64).toBe((seen.form as { base64: string }).base64);
+    });
 });

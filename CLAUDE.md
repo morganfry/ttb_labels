@@ -23,15 +23,25 @@ README.md; for file locations see the architecture section there.
   worker pool shared, not forked. Don't let the CSV path acquire its own matching
   or persistence logic, and route both image sources through resolveLabelImages
   (imageFetch.ts), not a second code path.
-- **A ZIP on the PDF tab is transport, not a third path.** A dropped .zip is
-  expanded CLIENT-SIDE (zipPdfs.ts) into individual PDF File objects that go
-  through the exact same detect → /api/verify → matcher → persist flow as a
-  directly-uploaded PDF (VerificationApp.addPdfs). Don't add server-side PDF-ZIP
+- **PDF and image are one path; an image is just an un-sliceable PDF.** The
+  upload tab accepts combined-application PDFs AND flat images (JPG/PNG/…), each
+  one application. WorkItem.mediaType (inferred from the file name in the verify
+  route via mediaType.ts) decides: "application/pdf" → slice (page 1 = form,
+  artwork pages = label); an image type → NO slicing, the one image is fed to
+  BOTH parsers verbatim (it shows the whole application). The extraction layer
+  already speaks images (buildSourceBlock), so don't add an image-only route or
+  parser — just set the media type. Images also skip the client pre-flight
+  detection (it's PDF-structure-based); they queue straight to ready.
+- **A ZIP on the upload tab is transport, not a third path.** A dropped .zip is
+  expanded CLIENT-SIDE (zipDocs.ts) into individual PDF/image File objects that
+  go through the exact same detect → /api/verify → matcher → persist flow as a
+  directly-uploaded file (VerificationApp.addDocs). Don't add server-side ZIP
   handling or a parallel verify route. Unlike the CSV image ZIP, extraction
   enforces a REAL decompressed budget via fflate's pre-decompress filter
   (pdfZipMaxEntryBytes/pdfZipMaxTotalBytes) — keep that; it's the zip-bomb guard.
   Junk-filtering + path normalization are shared with zipImages.ts (ZIP_JUNK_RE,
-  normalizeZipPath), not re-implemented.
+  normalizeZipPath); file-type classification with mediaType.ts (isPdfName/
+  isImageName), not re-implemented.
 - **Three homes for constants, kept separate on purpose:**
     - Domain rules (matcher thresholds, tolerances, the warning text) → schema.ts
     - Operational knobs (model/labelModel/formModel, maxTokens, concurrency,
@@ -44,13 +54,16 @@ README.md; for file locations see the architecture section there.
   scanner purges dynamic ones and styles vanish in the production build.
 - **Import persistence via @/lib/persistence (the barrel)**, not db.ts /
   persistWrite.ts / persistQuery.ts directly. Keeps the public surface stable.
-- **Page 1 only reaches the form parser** (extractFirstPage). The form prompt's
-  scope guard is the backup; the slice is the real guarantee. Don't remove either.
-- **Only artwork pages reach the label parser** (extractLabelArtwork) — the
-  image-bearing pages, not the whole document, to cut vision latency. It is
-  deliberately conservative: it never drops a page that has an image, and falls
-  back to the whole PDF when none are detected (or every page has one). It must
-  never break the label read — keep the internal try/catch + whole-PDF fallback.
+- **Page 1 only reaches the form parser** (extractFirstPage, PDF path only). The
+  form prompt's scope guard is the backup; the slice is the real guarantee. Don't
+  remove either. (Image items can't be sliced — the prompt scope guard is the
+  only guard there, by necessity.)
+- **Only artwork pages reach the label parser** (extractLabelArtwork, PDF path
+  only) — the image-bearing pages, not the whole document, to cut vision latency.
+  It is deliberately conservative: it never drops a page that has an image, and
+  falls back to the whole PDF when none are detected (or every page has one). It
+  must never break the label read — keep the internal try/catch + whole-PDF
+  fallback. (Image items skip this entirely; the one image is sent as-is.)
 - **Label and form can run on different models** (config.labelModel /
   config.formModel; LABEL_MODEL / FORM_MODEL env). The label is verbatim
   transcription, so it defaults to a faster/cheaper tier; the form stays on the
