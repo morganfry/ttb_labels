@@ -15,12 +15,10 @@
  * for a pre-submit preview.
  */
 import type { ApplicationData, ProductType, ProductSource } from "./schema";
+import { isImageName } from "./mediaType";
 
 /** The column that holds the JSON array of label image references (URLs or ZIP file names). */
 export const IMAGE_URLS_COLUMN = "labelImageUrls";
-
-/** Recognized image extensions for a local (ZIP) file reference. */
-const IMG_EXT_RE = /\.(jpe?g|png|webp|gif)$/i;
 
 /** True for an http(s) URL reference (fetched), false for a local ZIP file name. */
 function isHttpImageRef(ref: string): boolean {
@@ -173,7 +171,7 @@ function validateImageRef(raw: string): string | { error: string } {
     if (u.startsWith("/") || u.includes("\\") || u.split("/").includes("..")) {
         return { error: `Local image path must be a relative name without "..": ${truncate(u)}` };
     }
-    if (!IMG_EXT_RE.test(u)) {
+    if (!isImageName(u)) {
         return { error: `Local image "${truncate(u)}" must end in .jpg, .jpeg, .png, .webp, or .gif` };
     }
     return u;

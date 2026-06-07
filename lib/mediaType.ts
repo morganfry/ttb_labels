@@ -19,6 +19,10 @@ const IMAGE_BY_EXT: Record<string, MediaType> = {
     gif: "image/gif",
 };
 
+/** The image media types the pipeline accepts (derived from the extension map so
+ *  the two can't drift). Used to validate served/declared content types. */
+export const IMAGE_MEDIA_TYPES: MediaType[] = [...new Set(Object.values(IMAGE_BY_EXT))];
+
 /** The image media type for a file name, or null if it isn't a supported image. */
 export function imageMediaType(name: string): MediaType | null {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";

@@ -10,14 +10,10 @@
  */
 import { config } from "./config";
 import type { ExtractionInput, MediaType } from "./extraction";
+import { imageMediaType, IMAGE_MEDIA_TYPES } from "./mediaType";
 import { lookupZipImage, type ZipImageIndex } from "./zipImages";
 
-const EXT_MEDIA_TYPES: Record<string, MediaType> = {
-    jpg: "image/jpeg", jpeg: "image/jpeg",
-    png: "image/png", webp: "image/webp", gif: "image/gif",
-};
-
-const ALLOWED_MEDIA: MediaType[] = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const ALLOWED_MEDIA = IMAGE_MEDIA_TYPES;
 
 /** Raised for any fetch/validation failure; the orchestrator classifies it. */
 export class ImageFetchError extends Error {
@@ -89,8 +85,7 @@ function resolveMediaType(contentType: string | null, pathname: string): MediaTy
     const ct = (contentType ?? "").split(";")[0].trim().toLowerCase();
     if (ALLOWED_MEDIA.includes(ct as MediaType)) return ct as MediaType;
     if (ct === "image/jpg") return "image/jpeg";
-    const ext = pathname.split(".").pop()?.toLowerCase() ?? "";
-    return EXT_MEDIA_TYPES[ext] ?? null;
+    return imageMediaType(pathname);
 }
 
 /**
