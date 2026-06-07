@@ -5,7 +5,8 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 context/
-# Local sample inputs — large binaries, never committed (use Git LFS if needed)
-test-pdfs/
+# Local sample inputs. PDFs and JPGs are versioned via Git LFS (see
+# .gitattributes); the bulky archives and the CSV samples stay out of git.
+test-pdfs/*.zip
+test-jpgs/*.zip
 test-csvs/
-test-jpgs/
