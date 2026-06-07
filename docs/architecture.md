@@ -218,6 +218,20 @@ streaming, and the shared `runPool` are identical.
 - **Two paths, one judge** — PDF and CSV share matching, persistence, streaming,
   and the worker pool, so they can't drift.
 - **Streaming over batch-blocking** — results land per application (~seconds),
-  not after the whole batch.
+  not after the whole batch. This is why each extraction is a synchronous
+  `client.messages.create` call (label + form per item), parallelized by
+  `runPool` — **not** Anthropic's asynchronous Batch API.
 - **Relational store, text + verdicts only** — portable across any Postgres;
   no document bytes retained.
+
+## Possible optimizations
+
+- **Batch API for non-interactive CSV runs.** The model calls use the synchronous
+  Messages API so verdicts can stream into the table live. Anthropic's
+  [Message Batches API](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing)
+  is ~50% cheaper but asynchronous (up to 24h turnaround), so it can't feed the
+  per-item stream the UI is built around. For large **CSV bulk** jobs where live
+  results aren't needed, routing those extractions through the Batch API would cut
+  model cost roughly in half. It's a separate submit → poll → persist flow (not a
+  drop-in swap) and would forgo streaming for that path, so it's worth it only if
+  bulk cost becomes a real concern.
