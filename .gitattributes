@@ -2,5 +2,4 @@ test-pdfs/*.pdf filter=lfs diff=lfs merge=lfs -text
 test-jpgs/*.jpg filter=lfs diff=lfs merge=lfs -text
 test-jpgs/*.jpeg filter=lfs diff=lfs merge=lfs -text
 test-csvs/*.zip filter=lfs diff=lfs merge=lfs -text
-test-csvs/*.csv filter=lfs diff=lfs merge=lfs -text
 test-jpgs/*.zip filter=lfs diff=lfs merge=lfs -text
