@@ -250,12 +250,18 @@ A committed Render Blueprint (`render.yaml`) provisions the app as a Docker web
 service plus a managed Postgres in one step. From the Render dashboard: **New →
 Blueprint → pick this repo**; Render builds the existing `Dockerfile`, wires
 `DATABASE_URL` from the database, and prompts once for `ANTHROPIC_API_KEY` (kept
-as a secret, never committed). `autoDeploy` ships every green push to `main`.
+as a secret, never committed).
 
 A persistent web service is the right fit because the app uploads whole PDFs and
 streams NDJSON results — neither survives a serverless function's request-body
-cap or response buffering. CI (`.github/workflows/ci.yml`) typechecks, tests,
-and builds on every push; the deploy itself is handled by Render.
+cap or response buffering.
+
+Deploys are **test-gated**: Render's own auto-deploy is off (`render.yaml`:
+`autoDeploy: false`), and the GitHub workflow (`.github/workflows/ci.yml`)
+typechecks, tests, and builds on every push, then POSTs a Render **Deploy Hook**
+only on a green `main` — so a red build blocks the deploy. Add the hook URL
+(Render dashboard → the service → Settings → Deploy Hook) as the GitHub Actions
+secret `RENDER_DEPLOY_HOOK_URL`.
 
 ---
 

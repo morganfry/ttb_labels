@@ -20,7 +20,8 @@ services:
     branch: main
     dockerfilePath: ./Dockerfile
     healthCheckPath: /        # GET / returns 200 without touching the DB
-    autoDeploy: true          # redeploy on push to main
+    autoDeploy: false         # test-gated: CI POSTs a deploy hook only on green
+                              # main, so a red build blocks the deploy. See ci.yml.
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false           # set once in the dashboard; never committed

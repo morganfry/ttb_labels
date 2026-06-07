@@ -1,8 +1,13 @@
-name: CI
+name: CI & Deploy (Render)
 
-# Typecheck, test, and build on every push and PR. Deployment is handled by
-# Render's Blueprint (render.yaml) — it auto-deploys on a green push to main —
-# so this workflow is a pure quality gate, not a deploy pipeline.
+# Test-gated deploy to Render. Tests run on every push/PR; a deploy is triggered
+# only after they pass on `main`, by POSTing a Render Deploy Hook. Render's own
+# auto-deploy is OFF (render.yaml: autoDeploy: false), so a red build blocks the
+# deploy — Render only ships when this workflow calls the hook.
+#
+# Required GitHub Actions secret (Settings → Secrets and variables → Actions):
+#   RENDER_DEPLOY_HOOK_URL — the web service's Deploy Hook URL
+#   (Render dashboard → the service → Settings → Deploy Hook).
 
 on:
   push:
@@ -30,3 +35,21 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
+
+  deploy:
+    name: Trigger Render deploy
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST Render deploy hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set — cannot deploy."
+            exit 1
+          fi
+          # -f fails the step on any non-2xx so a deploy that won't start is visible.
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "Render deploy triggered." >> "$GITHUB_STEP_SUMMARY"
