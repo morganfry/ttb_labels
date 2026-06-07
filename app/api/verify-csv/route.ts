@@ -1,16 +1,18 @@
 /**
  * POST /api/verify-csv — bulk-verify applications from a CSV upload.
  *
- * Accepts multipart form data with a `csv` file and an optional `images` ZIP.
- * Each row supplies the COLA Part I values in named columns plus a JSON array
- * of label-image references — http(s) URLs (fetched) and/or file names inside
- * the ZIP (read from memory). The server transcribes the images, matches them
- * against the row, and streams one NDJSON line per finished row — the same wire
- * format as /api/verify, so the client renders both paths identically.
+ * Accepts multipart form data with a `csv` file and optional label-image
+ * uploads: `images` parts (ZIP archives) and/or `image` parts (individual image
+ * files). Each row supplies the COLA Part I values in named columns plus a JSON
+ * array of label-image references — http(s) URLs (fetched) and/or file names
+ * resolved from the uploaded images (read from memory). The server transcribes
+ * the images, matches them against the row, and streams one NDJSON line per
+ * finished row — the same wire format as /api/verify, so the client renders
+ * both paths identically.
  */
 import { processCsvBatch, type CsvWorkItem } from "@/lib/csvOrchestration";
 import { parseCsv } from "@/lib/csvParse";
-import { indexZipImages, type ZipImageIndex } from "@/lib/zipImages";
+import { indexImageSources, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
 import { saveResult, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 import type { ItemOutcome } from "@/lib/orchestration";
@@ -33,19 +35,28 @@ export async function POST(req: Request): Promise<Response> {
     if (headerError) return json({ error: headerError }, 400);
     if (rows.length === 0) return json({ error: "The CSV has no data rows." }, 400);
 
-    // Optional ZIP of label images, for rows that reference files by name rather
-    // than URL. Indexed once into memory; the per-image size/type bounds still
-    // apply when each entry is resolved.
+    // Optional label-image uploads, for rows that reference files by name rather
+    // than URL: ZIP archives (`images`) and/or individual image files (`image`).
+    // Both feed ONE in-memory index; the per-image size/type bounds still apply
+    // when each entry is resolved. Check the combined size before reading any
+    // bytes so a hostile upload can't balloon RAM past the cap.
     let zipImages: ZipImageIndex | undefined;
-    const imagesFile = form.get("images");
-    if (imagesFile instanceof File && imagesFile.size > 0) {
-        if (imagesFile.size > config.csvImageZipMaxBytes) {
-            return json({ error: `Image ZIP exceeds the ${config.csvImageZipMaxBytes}-byte limit.` }, 400);
+    const isUploaded = (f: FormDataEntryValue): f is File => f instanceof File && f.size > 0;
+    const zipParts = form.getAll("images").filter(isUploaded);
+    const imageParts = form.getAll("image").filter(isUploaded);
+    if (zipParts.length || imageParts.length) {
+        const totalBytes = [...zipParts, ...imageParts].reduce((n, f) => n + f.size, 0);
+        if (totalBytes > config.csvImageZipMaxBytes) {
+            return json({ error: `Uploaded label images exceed the ${config.csvImageZipMaxBytes}-byte limit.` }, 400);
         }
+        const sources: RawImageSource[] = [];
+        for (const z of zipParts) sources.push({ zip: new Uint8Array(await z.arrayBuffer()) });
+        for (const i of imageParts) sources.push({ name: i.name, bytes: new Uint8Array(await i.arrayBuffer()) });
         try {
-            zipImages = indexZipImages(new Uint8Array(await imagesFile.arrayBuffer()));
+            zipImages = indexImageSources(sources);
         } catch (e) {
-            return json({ error: `Could not read the image ZIP: ${e instanceof Error ? e.message : String(e)}` }, 400);
+            // Only a ZIP source can fail to parse; loose images never do.
+            return json({ error: `Could not read an uploaded image ZIP: ${e instanceof Error ? e.message : String(e)}` }, 400);
         }
     }
 

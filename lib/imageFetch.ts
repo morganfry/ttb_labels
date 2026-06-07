@@ -35,10 +35,10 @@ export function resolveLabelImages(refs: string[], zip?: ZipImageIndex): Promise
 
 async function resolveOne(ref: string, zip?: ZipImageIndex): Promise<ExtractionInput> {
     if (/^https?:\/\//i.test(ref)) return fetchImage(ref);
-    // Local reference: must come from the uploaded image ZIP.
-    if (!zip) throw new ImageFetchError(`"${ref}" refers to a local file, but no image ZIP was uploaded.`);
+    // Local reference: must come from the uploaded images (a ZIP or loose files).
+    if (!zip) throw new ImageFetchError(`"${ref}" refers to a local image file, but no images were uploaded.`);
     const bytes = lookupZipImage(zip, ref);
-    if (!bytes) throw new ImageFetchError(`Image not found in the uploaded ZIP: ${ref}`);
+    if (!bytes) throw new ImageFetchError(`Image not found among the uploaded images: ${ref}`);
     const mediaType = resolveMediaType(null, ref);
     if (!mediaType) throw new ImageFetchError(`Unsupported image type for ${ref} (allowed: ${ALLOWED_MEDIA.join(", ")}).`);
     if (bytes.byteLength === 0) throw new ImageFetchError(`Image is empty: ${ref}`);

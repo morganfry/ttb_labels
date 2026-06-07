@@ -1,6 +1,6 @@
 # TTB Label Verification — Prototype
 
-An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads combined application documents; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted three ways: as a combined PDF, as a flat image (JPG/PNG) of one, or — for bulk runs — as a CSV of application data whose label images are given by URL or by file name in an uploaded ZIP.
+An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads combined application documents; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted three ways: as a combined PDF, as a flat image (JPG/PNG) of one, or — for bulk runs — as a CSV of application data whose label images are given by URL or by file name, with the images uploaded alongside (loose files and/or a ZIP).
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
@@ -8,7 +8,7 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Features
 
-- **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or files in an uploaded ZIP). Both feed the identical matching, persistence, and results pipeline.
+- **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or uploaded image files — loose or in a ZIP). Both feed the identical matching, persistence, and results pipeline.
 - **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed) **or a flat image (JPG/PNG/WebP/GIF)** of one — a PDF is sliced (page 1 = form, artwork pages = label), while an image (which can't be sliced) is read whole by both parsers. Also accepts a ZIP of such files — expanded in the browser, each file joins the same queue and pipeline (with a real per-entry/total decompressed budget).
 - **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of image references. Each reference is either an http(s) URL or the name of a file inside an optional ZIP of label images uploaded alongside the CSV — so artwork on disk can be verified without hosting it. The app reads and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of local files against the ZIP, and a downloadable template.
 - **Pre-flight detection** — on upload, each PDF is inspected in the browser to confirm it contains both a filled Part I and an affixed label. Documents missing a piece, or read with low confidence, are flagged for review with a plain-language reason and an explicit "Process anyway" override. This is advisory guidance for the agent, not a gate (see Limitations).
@@ -50,11 +50,11 @@ The app has two screens, linked by the top navigation: **Verify** (review new ap
 
 Switch to the **CSV bulk** tab on the Verify screen when you already have the application data in a spreadsheet and the label artwork hosted at a URL or saved locally.
 
-1. **Prepare the CSV.** One application per row. The COLA Part I fields are columns; the final `labelImageUrls` column is a JSON array of image references — each either an http(s) URL or the name of a file inside the image ZIP (a folder path like `labels/24-1.jpg` works; a bare file name resolves if it is unique in the archive). The tab shows the full column list with notes, a worked example, and a **Download template** button. Required columns: `serialNumber`, `productType` (`wine` / `distilledSpirits` / `maltBeverages`), `source` (`domestic` / `imported`), `brandName`, `applicantNameAddress`, and `labelImageUrls`. Multiple references in one row are treated as several views (front / back / neck) of a single label.
+1. **Prepare the CSV.** One application per row. The COLA Part I fields are columns; the final `labelImageUrls` column is a JSON array of image references — each either an http(s) URL or the name of an image you upload (a folder path like `labels/24-1.jpg` works; a bare file name resolves if it is unique across everything you uploaded). The tab shows the full column list with notes, a worked example, and a **Download template** button. Required columns: `serialNumber`, `productType` (`wine` / `distilledSpirits` / `maltBeverages`), `source` (`domestic` / `imported`), `brandName`, `applicantNameAddress`, and `labelImageUrls`. Multiple references in one row are treated as several views (front / back / neck) of a single label.
 
 2. **Upload it.** Drag the CSV in or browse to it. The app parses it immediately and shows how many rows are valid and lists any rows with errors (a bad product type, a malformed reference array, a missing required value). Bad rows don't block the others — they're reported, not verified.
 
-3. **(If using local files) attach the image ZIP.** When any row references files by name, an uploader appears for a ZIP of those images. The app reads the archive in the browser and flags any referenced file that isn't in it, before you run. URL-only batches can skip this.
+3. **(If using local files) upload the images.** When any row references files by name, an uploader appears — drop the images individually and/or as a ZIP. The app reads them in the browser and flags any referenced file that isn't among them, before you run. URL-only batches can skip this.
 
 4. **Verify.** Click **Verify N rows**. As with PDFs, results stream into the same table row by row, with the same per-field verdicts and expandable detail. Rows whose images couldn't be fetched, found in the ZIP, or read are listed separately with the reason.
 
@@ -127,7 +127,7 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 - `parsers.ts` — the label and form parsers (prompt + validator pairs); `parseLabel` takes one image or an array (the CSV path's multi-view labels).
 - `csvParse.ts` — pure CSV tokenizer + per-row validation → application data + image references (URLs or ZIP file names; reused on the client for the pre-submit preview).
 - `imageFetch.ts` — resolves label-image references into model inputs: http(s) URLs are fetched (size / timeout caps + a best-effort SSRF guard), ZIP file names are read from the in-memory archive index.
-- `zipImages.ts` — pure: expands an uploaded image ZIP into a path/basename → bytes index, shared by the server (resolve) and the client (pre-flight cross-check).
+- `zipImages.ts` — pure: builds a path/basename → bytes index from any mix of uploaded image sources (loose files and/or ZIPs), shared by the server (resolve) and the client (pre-flight cross-check).
 - `zipDocs.ts` — pure: expands a ZIP dropped on the upload tab into its PDF/image entries (browser-side), enforcing a real per-entry/total decompressed budget. Each entry becomes an ordinary work item.
 - `matching.ts` — the three matchers + the dispatcher.
 - `orchestration.ts` — `runPool`, the concurrency-capped streaming worker pool, plus the PDF per-item pipeline.
@@ -268,7 +268,7 @@ secret `RENDER_DEPLOY_HOOK_URL`.
 ## Assumptions
 
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
-- For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image references resolve to that application's label artwork: either http(s) URLs reachable from the server, or files present in the uploaded image ZIP.
+- For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image references resolve to that application's label artwork: either http(s) URLs reachable from the server, or files present among the uploaded images (loose files and/or a ZIP).
 - The canonical government-warning text used for the strict check is the standard 27 CFR 16.21 wording. **Verify this string against the current regulation before any real use** — the strict matcher is only as correct as that constant.
 - Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default is used, but in production this should gate to human confirmation, since it controls the whole comparison profile.
 - The reviewing agent makes the final call. Every "review" outcome and detection flag is an invitation for human judgment, not an automated rejection.
@@ -293,4 +293,4 @@ secret `RENDER_DEPLOY_HOOK_URL`.
 
 ### Data and retention
 
-The prototype stores extracted text and verdicts only. Uploaded PDFs and label images — including images fetched from CSV URLs and images read from an uploaded image ZIP — are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. CSV image references (URLs and ZIP file names) are not persisted. A production system would need an explicit retention policy and the corresponding federal compliance review.
+The prototype stores extracted text and verdicts only. Uploaded PDFs and label images — including images fetched from CSV URLs and images uploaded for a CSV run (loose files or a ZIP) — are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. CSV image references (URLs and file names) are not persisted. A production system would need an explicit retention policy and the corresponding federal compliance review.
