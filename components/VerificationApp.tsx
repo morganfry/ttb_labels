@@ -143,9 +143,10 @@ export default function VerificationApp() {
 
         const body = new FormData();
         body.append("pairs", JSON.stringify(pending.map((it) => ({ id: it.id, name: it.name }))));
+        // One combined document per item serves as both the form and label
+        // regions, so upload its bytes once — the server reuses them for both.
         for (const it of pending) {
-            body.append(`label_${it.id}`, it.file!, it.name);
-            body.append(`form_${it.id}`, it.file!, it.name);
+            body.append(`file_${it.id}`, it.file!, it.name);
         }
 
         try {

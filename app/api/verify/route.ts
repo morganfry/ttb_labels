@@ -1,8 +1,9 @@
 /**
  * POST /api/verify — process uploaded applications and stream results.
  *
- * Accepts multipart form data: a `pairs` manifest plus a label_<id> and
- * form_<id> file per application. Responds with newline-delimited JSON
+ * Accepts multipart form data: a `pairs` manifest plus a `file_<id>` per
+ * application (one combined document, reused for both the form and label
+ * regions, so it is uploaded once). Responds with newline-delimited JSON
  * (NDJSON), one line per finished item, so the client table fills row by row
  * rather than waiting for the whole batch — the realization of the per-label
  * latency expectation.
@@ -33,16 +34,18 @@ export async function POST(req: Request): Promise<Response> {
     // Combined-document model: the same uploaded file serves as both label and
     // form (two regions of one document); the parsers read different parts of it.
     // A PDF is sliced downstream; an image (media type inferred from the name) is
-    // read whole by both parsers.
+    // read whole by both parsers. Read the bytes once and share the reference for
+    // both regions — downstream slicing only reads (pdf-lib never mutates input),
+    // so there is no aliasing hazard, and the file is uploaded once.
     const items: WorkItem[] = [];
     for (const p of pairs) {
-        const labelFile = form.get(`label_${p.id}`);
-        const formFile = form.get(`form_${p.id}`);
-        if (!(labelFile instanceof File) || !(formFile instanceof File)) continue;
+        const file = form.get(`file_${p.id}`);
+        if (!(file instanceof File)) continue;
+        const bytes = new Uint8Array(await file.arrayBuffer());
         items.push({
             id: p.id, name: p.name,
-            labelPdf: new Uint8Array(await labelFile.arrayBuffer()),
-            formPdf: new Uint8Array(await formFile.arrayBuffer()),
+            labelPdf: bytes,
+            formPdf: bytes,
             mediaType: workItemMediaType(p.name),
         });
     }
