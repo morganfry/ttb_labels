@@ -211,8 +211,8 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     const labelModel = opts.labelModel ?? opts.model ?? config.labelModel;
     const formModel = opts.formModel ?? opts.model ?? config.formModel;
     const [labelRes, formRes] = await Promise.allSettled([
-        (async () => { const s = Date.now(); try { return await label(labelInput, labelModel); } finally { timings.labelMs = Date.now() - s; } })(),
-        (async () => { const s = Date.now(); try { return await form(formInput, formModel); } finally { timings.formMs = Date.now() - s; } })(),
+        (async () => { const s = Date.now(); try { return await label(labelInput, labelModel, opts.signal); } finally { timings.labelMs = Date.now() - s; } })(),
+        (async () => { const s = Date.now(); try { return await form(formInput, formModel, opts.signal); } finally { timings.formMs = Date.now() - s; } })(),
     ]);
 
     if (labelRes.status === "rejected") return fail(classifyExtraction(labelRes.reason, "label"));

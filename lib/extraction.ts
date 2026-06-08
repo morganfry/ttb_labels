@@ -29,8 +29,10 @@ export interface ExtractionInput {
  * differently from a bad document.
  */
 export type ExtractionErrorKind =
-    | "network"   // API unreachable / timed out (firewall, outage)
-    | "api"       // API returned an error status
+    | "network"   // API unreachable / timed out (firewall, outage) — transient
+    | "api"       // API returned a transient/server error (5xx, 429) — retryable
+    | "client"    // API rejected the request (permanent 4xx: bad request / auth) — not retryable
+    | "truncated" // response cut off at max_tokens — output incomplete, not retryable
     | "empty"     // model returned no text content
     | "parse"     // text was not valid JSON after cleanup
     | "shape"     // parsed JSON failed the caller's validator
@@ -68,6 +70,8 @@ export interface ExtractOptions<T> {
     validate: (parsed: unknown) => T | null;
     /** Override the default model for this call. */
     model?: string;
+    /** Aborts the in-flight model request (e.g. on client disconnect). */
+    signal?: AbortSignal;
 }
 
 /**
@@ -80,7 +84,7 @@ export interface ExtractOptions<T> {
 export async function extract<T>(opts: ExtractOptions<T>): Promise<ExtractionResult<T>> {
     const model = opts.model ?? config.model;
     const start = Date.now();
-    const raw = await callModel(opts.input, opts.systemPrompt, model);
+    const raw = await callModel(opts.input, opts.systemPrompt, model, opts.signal);
 
     if (!raw || raw.trim().length === 0) throw new ExtractionError("empty", "Model returned no text content.");
 
@@ -106,7 +110,7 @@ export async function extract<T>(opts: ExtractOptions<T>): Promise<ExtractionRes
  * the caller in {@link extract} and deliberately NOT retried — re-asking
  * identically won't help and would burn the per-label latency budget.
  */
-async function callModel(input: ExtractionInput | ExtractionInput[], systemPrompt: string, model: string): Promise<string> {
+async function callModel(input: ExtractionInput | ExtractionInput[], systemPrompt: string, model: string, signal?: AbortSignal): Promise<string> {
     const inputs = Array.isArray(input) ? input : [input];
     // Each source becomes its own content block; a leading note tells the model
     // that several sources describe one subject so it merges rather than picks.
@@ -115,8 +119,9 @@ async function callModel(input: ExtractionInput | ExtractionInput[], systemPromp
     const lead: any[] = inputs.length > 1
         ? [{ type: "text", text: `The following ${inputs.length} images are different views (e.g. front, back, neck) of a SINGLE label. Transcribe each field once, drawing from whichever view shows it.` }]
         : [];
+    let message: Anthropic.Message;
     try {
-        const message = await client.messages.create({
+        message = await client.messages.create({
             model,
             max_tokens: config.maxTokens,
             temperature: config.temperature, // 0 — verbatim transcription must be deterministic
@@ -129,16 +134,24 @@ async function callModel(input: ExtractionInput | ExtractionInput[], systemPromp
                     { type: "text", text: "Transcribe per your instructions. Output JSON only." },
                 ],
             }],
-        });
-        return message.content
-            .filter((b): b is Anthropic.TextBlock => b.type === "text")
-            .map((b) => b.text)
-            .join("\n");
+        }, { signal });
     } catch (err) {
         // The SDK has already exhausted its retries; classify the final failure.
         if (isNetworkError(err)) throw new ExtractionError("network", `Could not reach the model API: ${errMsg(err)}`);
+        const status = (err as { status?: number })?.status;
+        // A permanent client error (4xx other than rate-limit) won't improve on retry.
+        if (typeof status === "number" && status >= 400 && status < 500 && status !== 429)
+            throw new ExtractionError("client", `Model API rejected the request (${status}): ${errMsg(err)}`);
         throw new ExtractionError("api", `Model API error: ${errMsg(err)}`);
     }
+    // A truncated response yields incomplete JSON; surface that clearly rather than
+    // letting it read as a generic "invalid JSON" downstream. Re-asking won't help.
+    if (message.stop_reason === "max_tokens")
+        throw new ExtractionError("truncated", `Model response was cut off at the ${config.maxTokens}-token limit; the output is incomplete.`);
+    return message.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
 }
 
 /** Images and PDFs require different content-block shapes. */

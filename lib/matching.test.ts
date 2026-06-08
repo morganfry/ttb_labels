@@ -174,6 +174,9 @@ describe("product-type rulesets", () => {
     it("wine appellation checked for wine", () => {
         expect(statusOf(baseLabel({ wineAppellation: fld("Napa Valley") }), baseApp({ productType: "wine", wineAppellation: "Napa Valley" }), "wineAppellation").status).toBe("pass");
     });
+    it("a near-but-inexact appellation routes to review, not an auto-pass", () => {
+        expect(statusOf(baseLabel({ wineAppellation: fld("Napa Valley") }), baseApp({ productType: "wine", wineAppellation: "Napa Vally" }), "wineAppellation").status).toBe("review");
+    });
     it("wine appellation N/A for spirits", () => { expect(statusOf(baseLabel(), baseApp(), "wineAppellation").status).toBe("notApplicable"); });
     it("origin required when imported", () => {
         expect(statusOf(baseLabel({ countryOfOrigin: fld(null) }), baseApp({ source: "imported" }), "countryOfOrigin").status).toBe("fail");

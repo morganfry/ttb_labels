@@ -28,13 +28,13 @@ export interface FormExtraction {
 
 /** Extract label fields from a label image/PDF. Pass an array of inputs to
  *  transcribe several views (front/back/neck) of one label in a single call. */
-export function parseLabel(input: ExtractionInput | ExtractionInput[], model?: string): Promise<ExtractionResult<LabelExtraction>> {
-    return extract<LabelExtraction>({ input, systemPrompt: LABEL_PROMPT, model, validate: validateLabel });
+export function parseLabel(input: ExtractionInput | ExtractionInput[], model?: string, signal?: AbortSignal): Promise<ExtractionResult<LabelExtraction>> {
+    return extract<LabelExtraction>({ input, systemPrompt: LABEL_PROMPT, model, signal, validate: validateLabel });
 }
 
 /** Extract Part I from a COLA form (page 1). */
-export function parseForm(input: ExtractionInput, model?: string): Promise<ExtractionResult<FormExtraction>> {
-    return extract<FormExtraction>({ input, systemPrompt: FORM_PROMPT, model, validate: validateForm });
+export function parseForm(input: ExtractionInput, model?: string, signal?: AbortSignal): Promise<ExtractionResult<FormExtraction>> {
+    return extract<FormExtraction>({ input, systemPrompt: FORM_PROMPT, model, signal, validate: validateForm });
 }
 
 const CONF = new Set(["high", "medium", "low"]);

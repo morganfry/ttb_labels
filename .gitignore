@@ -17,6 +17,3 @@ test-csvs/img/
 # Local self-signed dev TLS cert (for --experimental-https on machines where
 # mkcert's CA install is blocked) — never commit the private key.
 certificates/
-
-# Local-only Vercel deploy notes; kept out of the repo intentionally.
-docs/deploy-vercel.md

@@ -142,7 +142,7 @@ export const FIELD_RULES: Record<keyof LabelExtraction, FieldRule> = {
     netContents:         { matcher: "numeric",  comparesTo: "labelOnly", required: true,  tolerance: 0.01, unit: "ml" },
     producerNameAddress: { matcher: "tolerant", comparesTo: "form",      required: true,  threshold: 0.80, tokenSet: true, normalize: "address" },
     countryOfOrigin:     { matcher: "presence", comparesTo: "labelOnly", required: false },
-    wineAppellation:     { matcher: "tolerant", comparesTo: "form",      required: false, threshold: 0.85 },
+    wineAppellation:     { matcher: "tolerant", comparesTo: "form",      required: false, threshold: 0.85, reviewBand: 0.95 },
     sulfitesDeclaration: { matcher: "presence", comparesTo: "labelOnly", required: false },
     governmentWarning:   { matcher: "strict",   comparesTo: "statute",   required: true },
     warningFormatting:   { matcher: "strict",   comparesTo: "statute",   required: true },

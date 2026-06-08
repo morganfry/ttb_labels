@@ -115,7 +115,7 @@ function csvReducer(s: CsvState, a: CsvAction): CsvState {
         case "reset":
             return INITIAL_CSV;
         case "runStart":
-            return { ...s, processing: true, processError: null, items: [], done: 0 };
+            return { ...s, processing: true, processError: null, items: [], done: 0, total: 0 };
         case "streamStart":
             return { ...s, total: a.total };
         case "streamProgress":
@@ -277,7 +277,10 @@ export default function CsvVerify() {
     const resultItems = items.filter((it) => it.result);
     const errorItems = items.filter((it) => !it.result);
     const hasResults = items.length > 0;
-    const allDone = total > 0 && done >= total;
+    // Show the summary/latency rollup once the run has finished with at least one
+    // result — including a partial run cut short by a mid-stream server error, so
+    // the rows that DID complete aren't hidden.
+    const showSummary = !processing && resultItems.length > 0;
     const summary = resultItems.reduce((a: Record<string, number>, it) => {
         a[it.result.overall] = (a[it.result.overall] || 0) + 1;
         return a;
@@ -446,7 +449,7 @@ export default function CsvVerify() {
                 </div>
             )}
 
-            {allDone && (
+            {showSummary && (
                 <div className="mb-4 flex flex-col gap-2.5">
                     <div className="flex flex-wrap gap-2.5">
                         {Object.entries(OVERALL_META).map(([k, meta]) => (

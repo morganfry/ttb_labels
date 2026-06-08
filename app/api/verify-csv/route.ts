@@ -17,15 +17,18 @@ import { saveResult, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 import type { ItemOutcome } from "@/lib/orchestration";
 
-export const runtime = "nodejs"; // needs Buffer / outbound fetch
+export const runtime = "nodejs"; // needs Buffer (multipart parsing); images are uploaded, never fetched
 export const maxDuration = 300;
 
 export async function POST(req: Request): Promise<Response> {
     await migrate(); // idempotent; ensures tables exist on a fresh DB
 
-    // Reject an oversized request before buffering it into memory (DoS guard).
+    // Reject by Content-Length BEFORE buffering (DoS guard). Require the header so
+    // a chunked / length-absent request can't slip past with Number(null)===0.
     const len = Number(req.headers.get("content-length"));
-    if (Number.isFinite(len) && len > config.uploadMaxBytes)
+    if (!Number.isFinite(len) || len <= 0)
+        return json({ error: "A Content-Length header is required for uploads." }, 411);
+    if (len > config.uploadMaxBytes)
         return json({ error: `Request exceeds the ${config.uploadMaxBytes}-byte upload limit.` }, 413);
 
     let form: FormData;
@@ -42,8 +45,8 @@ export async function POST(req: Request): Promise<Response> {
     if (headerError) return json({ error: headerError }, 400);
     if (rows.length === 0) return json({ error: "The CSV has no data rows." }, 400);
 
-    // Optional label-image uploads, for rows that reference files by name rather
-    // than URL: ZIP archives (`images`) and/or individual image files (`image`).
+    // Optional label-image uploads, for rows that reference files by name:
+    // ZIP archives (`images`) and/or individual image files (`image`).
     // Both feed ONE in-memory index; the per-image size/type bounds still apply
     // when each entry is resolved. Check the combined size before reading any
     // bytes so a hostile upload can't balloon RAM past the cap.

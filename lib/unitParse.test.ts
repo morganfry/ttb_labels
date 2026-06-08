@@ -37,10 +37,12 @@ describe("parseVolumeMl", () => {
     it("returns null when no recognizable unit is present", () => {
         expect(parseVolumeMl("a bottle")).toBeNull();
     });
-    it("documented limitation: reads only the first token of a compound statement", () => {
-        // "1 PINT 9 FL OZ" is not fully parsed; pint is not a recognized unit, so
-        // it falls through to the fl-oz match on "9 FL OZ". Pinned so a future
-        // change to compound handling is a conscious decision.
-        expect(parseVolumeMl("1 PINT 9 FL OZ")).toBeCloseTo(9 * 29.5735, 2);
+    it("returns null for a compound US statement (flags for review, not a wrong number)", () => {
+        expect(parseVolumeMl("1 PINT 9 FL OZ")).toBeNull();
+        expect(parseVolumeMl("1 quart")).toBeNull();
+    });
+    it("does not match a bare 'l' inside a word", () => {
+        expect(parseVolumeMl("5 Label")).toBeNull();
+        expect(parseVolumeMl("2 liters")).toBe(2000); // real liters still parse
     });
 });

@@ -9,7 +9,7 @@ type Mode = "pdf" | "csv";
 
 const TABS: { mode: Mode; label: string; Icon: typeof FileText; hint: string }[] = [
     { mode: "pdf", label: "PDF / image upload", Icon: FileText, hint: "Upload combined application PDFs or images (TTB Form 5100.31, OMB No. 1513-0020) to check them against TTB requirements." },
-    { mode: "csv", label: "CSV bulk", Icon: FileSpreadsheet, hint: "Upload a CSV of applications with label image URLs for bulk verification." },
+    { mode: "csv", label: "CSV bulk", Icon: FileSpreadsheet, hint: "Upload a CSV of applications plus the label images they reference by file name (loose files and/or a ZIP)." },
 ];
 
 export default function HomeTabs() {

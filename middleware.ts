@@ -31,7 +31,10 @@ export function middleware(req: NextRequest) {
     const [scheme, encoded] = (req.headers.get("authorization") ?? "").split(" ");
     if (scheme === "Basic" && encoded) {
         let decoded = "";
-        try { decoded = atob(encoded); } catch { /* malformed base64 → falls through to 401 */ }
+        // Decode the base64 BYTES as UTF-8, so a non-ASCII credential isn't mangled
+        // (atob alone yields a latin1 "binary string").
+        try { decoded = new TextDecoder().decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))); }
+        catch { /* malformed base64 → falls through to 401 */ }
         const sep = decoded.indexOf(":");
         if (sep !== -1 && safeEqual(decoded.slice(0, sep), USER) && safeEqual(decoded.slice(sep + 1), PASS)) {
             return NextResponse.next();

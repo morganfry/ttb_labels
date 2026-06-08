@@ -9,21 +9,24 @@
  * latency expectation.
  */
 import { processBatch, type WorkItem, type ItemOutcome } from "@/lib/orchestration";
-import { workItemMediaType } from "@/lib/mediaType";
+import { workItemMediaType, isDocName } from "@/lib/mediaType";
 import { saveResult, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 
 export const runtime = "nodejs";   // needs Buffer / pdf-lib (not edge)
-export const maxDuration = 300;    // Vercel hint; ignored by a long-running server
+export const maxDuration = 300;    // serverless function cap (Vercel/Next); a long-running Render server ignores it
 
 interface Pair { id: string; name: string }
 
 export async function POST(req: Request): Promise<Response> {
     await migrate(); // idempotent; ensures tables exist on a fresh DB
 
-    // Reject an oversized request before buffering it into memory (DoS guard).
+    // Reject by Content-Length BEFORE buffering (DoS guard). Require the header so
+    // a chunked / length-absent request can't slip past with Number(null)===0.
     const len = Number(req.headers.get("content-length"));
-    if (Number.isFinite(len) && len > config.uploadMaxBytes)
+    if (!Number.isFinite(len) || len <= 0)
+        return json({ error: "A Content-Length header is required for uploads." }, 411);
+    if (len > config.uploadMaxBytes)
         return json({ error: `Request exceeds the ${config.uploadMaxBytes}-byte upload limit; upload fewer/smaller files.` }, 413);
 
     let form: FormData;
@@ -49,6 +52,8 @@ export async function POST(req: Request): Promise<Response> {
     for (const p of pairs) {
         const file = form.get(`file_${p.id}`);
         if (!(file instanceof File)) continue;
+        if (!isDocName(p.name)) // reject up front rather than mis-routing a .tiff/.heic to pdf-lib
+            return json({ error: `"${p.name}" is not a supported type — upload a PDF or an image (JPG/PNG/WebP/GIF).` }, 415);
         if (file.size > config.verifyMaxFileBytes)
             return json({ error: `"${p.name}" exceeds the ${config.verifyMaxFileBytes}-byte per-file limit.` }, 413);
         const bytes = new Uint8Array(await file.arrayBuffer());

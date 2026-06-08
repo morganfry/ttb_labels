@@ -70,11 +70,16 @@ export async function transaction<T>(fn: (q: TxQuery) => Promise<T>): Promise<T>
 let migrated = false;
 let migrating: Promise<void> | null = null;
 
+/** Advisory-lock key so concurrent INSTANCES (a multi-task cold start) serialize
+ *  the migration instead of racing on CREATE INDEX. Arbitrary fixed bigint. */
+const MIGRATION_LOCK_KEY = 4_927_271_010;
+
 /**
  * Create the schema if absent. Every route calls this per request, so the
- * in-flight run is memoized: concurrent first requests on a cold start share one
- * migration instead of racing on CREATE INDEX. On failure the promise is cleared
- * so a later request retries.
+ * in-flight run is memoized within a process; across processes a transaction-
+ * scoped advisory lock serializes the DDL (so multiple instances starting at once
+ * don't race on CREATE INDEX). On failure the promise is cleared so a later
+ * request retries.
  */
 export function migrate(): Promise<void> {
     if (migrated) return Promise.resolve();
@@ -87,29 +92,33 @@ export function migrate(): Promise<void> {
 }
 
 async function runMigration(): Promise<void> {
-    await sql`
-    CREATE TABLE IF NOT EXISTS verification (
-      id            TEXT PRIMARY KEY,
-      serial_number TEXT NOT NULL,
-      product_type  TEXT NOT NULL,
-      overall       TEXT NOT NULL,
-      brand_name    TEXT,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`;
-    await sql`
-    CREATE TABLE IF NOT EXISTS field_result (
-      id                TEXT PRIMARY KEY,
-      verification_id   TEXT NOT NULL REFERENCES verification(id) ON DELETE CASCADE,
-      field             TEXT NOT NULL,
-      status            TEXT NOT NULL,
-      label_value       TEXT,
-      application_value TEXT,
-      score             REAL,
-      issues            JSONB
-    )`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_verif_serial  ON verification(serial_number)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_verif_overall ON verification(overall)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_verif_brand   ON verification(brand_name)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_verif_created ON verification(created_at)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_field_verif   ON field_result(verification_id)`;
+    await transaction(async (q) => {
+        // Block until we hold the lock; it auto-releases at COMMIT.
+        await q("SELECT pg_advisory_xact_lock($1)", [MIGRATION_LOCK_KEY]);
+        await q(`CREATE TABLE IF NOT EXISTS verification (
+          id            TEXT PRIMARY KEY,
+          serial_number TEXT NOT NULL,
+          product_type  TEXT NOT NULL,
+          overall       TEXT NOT NULL,
+          brand_name    TEXT,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+        )`);
+        await q(`CREATE TABLE IF NOT EXISTS field_result (
+          id                TEXT PRIMARY KEY,
+          verification_id   TEXT NOT NULL REFERENCES verification(id) ON DELETE CASCADE,
+          field             TEXT NOT NULL,
+          status            TEXT NOT NULL,
+          label_value       TEXT,
+          application_value TEXT,
+          score             REAL,
+          issues            JSONB
+        )`);
+        await q(`CREATE INDEX IF NOT EXISTS idx_verif_serial    ON verification(serial_number)`);
+        // Functional index so the case-insensitive serial search (UPPER(serial)=…) is indexed.
+        await q(`CREATE INDEX IF NOT EXISTS idx_verif_serial_ci ON verification(UPPER(serial_number))`);
+        await q(`CREATE INDEX IF NOT EXISTS idx_verif_overall   ON verification(overall)`);
+        await q(`CREATE INDEX IF NOT EXISTS idx_verif_brand     ON verification(brand_name)`);
+        await q(`CREATE INDEX IF NOT EXISTS idx_verif_created   ON verification(created_at)`);
+        await q(`CREATE INDEX IF NOT EXISTS idx_field_verif     ON field_result(verification_id)`);
+    });
 }
