@@ -135,6 +135,7 @@ export default function CsvVerify() {
     const [state, dispatch] = useReducer(csvReducer, INITIAL_CSV);
     const { file, rows, parseError, imageFiles, imageIndex, imageError, items, total, done, processing, processError } = state;
     const [dragging, setDragging] = useState(false);
+    const [imagesDragging, setImagesDragging] = useState(false);
     useRegisterProcessing(processing); // warn on navigation while a run is active
     const inputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -326,16 +327,18 @@ export default function CsvVerify() {
                     tabIndex={0}
                     aria-label="Add label images: drag and drop images or a ZIP here, or activate to browse"
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); imageInputRef.current?.click(); } }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => { e.preventDefault(); onPickImages(e.dataTransfer?.files ?? null); }}
+                    onDragOver={(e) => { e.preventDefault(); setImagesDragging(true); }}
+                    onDragLeave={() => setImagesDragging(false)}
+                    onDrop={(e) => { e.preventDefault(); setImagesDragging(false); onPickImages(e.dataTransfer?.files ?? null); }}
                     onClick={() => imageInputRef.current?.click()}
-                    className={`mb-5 flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-3.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
-                        preview?.needsImages ? "border-amber-300 hover:border-amber-400" : "border-slate-300 hover:border-slate-400"}`}
+                    className={`mb-5 flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-11 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+                        imagesDragging ? "border-blue-600 bg-blue-50"
+                            : preview?.needsImages ? "border-amber-300 hover:border-amber-400" : "border-slate-300 hover:border-slate-400"}`}
                 >
-                    <Images size={22} className={`shrink-0 ${preview?.needsImages ? "text-amber-600" : "text-slate-400"}`} />
+                    <Images size={22} className={`shrink-0 ${imagesDragging ? "text-blue-600" : preview?.needsImages ? "text-amber-600" : "text-slate-400"}`} />
                     <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium text-slate-700">
-                            {preview?.needsImages ? "Upload the label images" : "Optional: label images"}
+                            {imagesDragging ? "Drop the images to add them" : preview?.needsImages ? "Upload the label images" : "Optional: label images"}
                         </div>
                         <div className="text-xs text-slate-400">Needed only for rows that reference image files by name. Drag images or a .zip here, or click to browse.</div>
                     </div>
