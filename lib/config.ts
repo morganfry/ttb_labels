@@ -38,9 +38,13 @@ export const config = {
      * row (or archive) can't balloon a batch. */
     csvImageMaxBytes: intFromEnv("CSV_IMAGE_MAX_BYTES", 12 * 1024 * 1024),
     csvMaxImagesPerRow: intFromEnv("CSV_MAX_IMAGES_PER_ROW", 6),
-    /* Cap on the uploaded image-ZIP (compressed) — a blunt zip-bomb mitigation,
-     * since extraction decompresses the whole archive into memory. */
+    /* Cap on the uploaded image-ZIP (compressed upload size). */
     csvImageZipMaxBytes: intFromEnv("CSV_IMAGE_ZIP_MAX_BYTES", 100 * 1024 * 1024),
+    /* Real DECOMPRESSED budget for the image ZIP (zip-bomb guard): a ZIP entry is
+     * rejected by its declared uncompressed size before expansion when it exceeds
+     * the per-image cap (csvImageMaxBytes) or would push the running total past
+     * this. Mirrors the PDF-ZIP per-entry/total budget; see zipImages.ts. */
+    csvImageZipMaxTotalBytes: intFromEnv("CSV_IMAGE_ZIP_MAX_TOTAL_BYTES", 200 * 1024 * 1024),
     /* PDF/image bulk path: a dropped ZIP of applications (combined PDFs and/or
      * images) is expanded in the browser (zipDocs.ts). pdfZipMaxBytes guards the
      * compressed upload; the per-entry/total caps are a REAL decompressed budget

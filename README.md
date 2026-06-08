@@ -96,9 +96,7 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 
 - **CSV label images are uploaded, never fetched.** The bulk path resolves each `labelImages` name against the images the agent uploads (loose files and/or a ZIP); the server makes no outbound request, so there is no URL-fetch / SSRF surface — a deliberate choice for a locked-down network. (Net contents and ABV still come from the label image, not the CSV, so a row can't assert compliance values directly.)
 
-- **The CSV image ZIP is fully decompressed in memory.** Both the server (resolve) and the client (pre-flight cross-check) expand the whole archive, bounded only by a blunt compressed-size cap (`CSV_IMAGE_ZIP_MAX_BYTES`) — not a decompressed-size budget, so it is not hardened against a crafted "zip bomb." Production should stream-extract with a hard per-entry and total decompressed limit.
-
-- **Upload-tab ZIP expansion is in-browser and synchronous.** A dropped ZIP of PDFs and/or images is decompressed client-side (`lib/zipDocs.ts`) before the run; a very large archive briefly blocks the UI thread during extraction. Unlike the CSV image ZIP, it enforces a real decompressed budget (per-entry and total, checked from ZIP metadata before each entry is expanded), so it is hardened against a crafted "zip bomb." Only `.zip` is supported (not 7z/rar/tar/gz).
+- **ZIP archives are bounded by a decompressed budget.** Both ZIP paths — the CSV image ZIP (`lib/zipImages.ts`) and the upload-tab ZIP of PDFs/images (`lib/zipDocs.ts`) — reject entries by their declared uncompressed size, per-entry and cumulative, from the ZIP metadata *before* decompressing, so a crafted "zip bomb" can't balloon memory. Both decompress synchronously (the CSV preview and the upload tab run in the browser), so a very large *legitimate* archive briefly blocks the UI thread during extraction. Only `.zip` is supported (not 7z/rar/tar/gz).
 
 ### Deployment & networking
 

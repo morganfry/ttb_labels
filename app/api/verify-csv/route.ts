@@ -53,7 +53,11 @@ export async function POST(req: Request): Promise<Response> {
         for (const z of zipParts) sources.push({ zip: new Uint8Array(await z.arrayBuffer()) });
         for (const i of imageParts) sources.push({ name: i.name, bytes: new Uint8Array(await i.arrayBuffer()) });
         try {
-            zipImages = indexImageSources(sources);
+            // Enforce the decompressed budget so a crafted ZIP can't balloon memory.
+            zipImages = indexImageSources(sources, {
+                maxEntryBytes: config.csvImageMaxBytes,
+                maxTotalBytes: config.csvImageZipMaxTotalBytes,
+            });
         } catch (e) {
             // Only a ZIP source can fail to parse; loose images never do.
             return json({ error: `Could not read an uploaded image ZIP: ${e instanceof Error ? e.message : String(e)}` }, 400);

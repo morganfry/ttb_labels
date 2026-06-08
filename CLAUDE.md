@@ -94,12 +94,12 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   limitations). Mitigated by the confidence gate, not eliminated.
 - parseVolumeMl handles mL/cL/L/fl oz only; compound US ("1 PINT 9 FL OZ")
   flags for review by design.
-- CSV image ZIP (zipImages.ts) is decompressed WHOLE into memory on both server
-  and client; bounded only by csvImageZipMaxBytes — which now caps the COMBINED
-  uploaded image bytes (loose files + ZIPs), still compressed, NOT a
-  decompressed-size budget — so it's not zip-bomb-hardened. Don't raise the cap
-  or drop it without adding a real per-entry/total decompressed limit. (Loose
-  image files don't decompress, so only the ZIP transport carries that risk.)
+- CSV image ZIP (zipImages.ts) IS zip-bomb-hardened: indexImageSources takes a
+  ZipBudget and filters entries by declared uncompressed size (per-entry
+  csvImageMaxBytes, total csvImageZipMaxTotalBytes) BEFORE expansion — parity with
+  zipDocs.ts — on both server (route) and client (preview). Keep that budget;
+  csvImageZipMaxBytes is still the separate compressed-upload cap. (The bare
+  indexZipImages test wrapper omits the budget; production callers always pass it.)
 - CSV rows that fail validation become pre-failed work items (preError) so they
   surface in the stream and summary instead of being dropped. Keep that. (Rows
   whose local image refs aren't in the ZIP fail per-row at resolve time, and the

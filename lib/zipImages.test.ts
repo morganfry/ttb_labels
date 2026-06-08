@@ -80,6 +80,31 @@ describe("indexImageSources (loose files and ZIPs in one index)", () => {
     });
 });
 
+describe("indexImageSources decompressed budget (zip-bomb guard)", () => {
+    it("skips an entry over the per-entry budget without indexing it", () => {
+        const z = zip({ "small.jpg": "ok", "big.jpg": "x".repeat(20000) }); // 20 KB decompressed
+        const idx = indexImageSources([{ zip: z }], { maxEntryBytes: 10000, maxTotalBytes: 1_000_000 });
+        expect(zipHasImage(idx, "small.jpg")).toBe(true);
+        expect(zipHasImage(idx, "big.jpg")).toBe(false); // over per-entry budget → never decompressed
+    });
+
+    it("stops accepting entries once the cumulative budget is exceeded", () => {
+        const e = "y".repeat(6000); // 6 KB each, 18 KB total
+        const z = zip({ "a.jpg": e, "b.jpg": e, "c.jpg": e });
+        const idx = indexImageSources([{ zip: z }], { maxEntryBytes: 10000, maxTotalBytes: 10000 });
+        expect(zipHasImage(idx, "a.jpg")).toBe(true); // 6 KB fits
+        const accepted = ["a.jpg", "b.jpg", "c.jpg"].filter((n) => zipHasImage(idx, n)).length;
+        expect(accepted).toBe(1); // b/c would exceed the 10 KB total → skipped
+    });
+
+    it("excludes non-image entries from a budgeted unzip", () => {
+        const z = zip({ "front.jpg": "F", "notes.txt": "secret" });
+        const idx = indexImageSources([{ zip: z }], { maxEntryBytes: 1_000_000, maxTotalBytes: 1_000_000 });
+        expect(zipHasImage(idx, "front.jpg")).toBe(true);
+        expect(idx.byPath.has("notes.txt")).toBe(false);
+    });
+});
+
 describe("resolveLabelImages (from uploaded images)", () => {
     it("resolves an uploaded file to a model input", async () => {
         const idx = indexZipImages(zip({ "front.png": "PNGDATA" }));

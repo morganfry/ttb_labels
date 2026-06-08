@@ -4,6 +4,7 @@ import { useRef, useReducer, useMemo, useState, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Images, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { OVERALL_META, isZip, isImage } from "@/lib/uiTypes";
+import { config } from "@/lib/config";
 import { parseCsv, CSV_COLUMNS, IMAGE_REFS_COLUMN, type CsvRow } from "@/lib/csvParse";
 import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
@@ -23,7 +24,11 @@ async function indexImageFiles(files: File[]): Promise<ZipImageIndex> {
         const bytes = new Uint8Array(await f.arrayBuffer());
         return isZip(f.name) ? { zip: bytes } : { name: f.name, bytes };
     }));
-    return indexImageSources(sources);
+    // Same decompressed budget the server enforces, so a bomb can't hang the tab.
+    return indexImageSources(sources, {
+        maxEntryBytes: config.csvImageMaxBytes,
+        maxTotalBytes: config.csvImageZipMaxTotalBytes,
+    });
 }
 
 /** A worked example shown on the page and offered as a downloadable template. */

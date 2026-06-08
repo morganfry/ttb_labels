@@ -14,13 +14,13 @@
  * run). Bytes live only in memory for the request — nothing is persisted, the
  * same retention stance as the rest of the pipeline.
  *
- * Caveat: unzipSync decompresses the whole archive into memory, so a crafted
- * "zip bomb" could balloon RAM. The route caps the uploaded image bytes as a
- * blunt mitigation; a production system should stream-extract with a hard
- * decompressed-size budget. (Loose image files don't decompress, so they carry
- * no such risk.)
+ * Zip-bomb guard: pass a {@link ZipBudget} and ZIP entries are filtered by their
+ * declared uncompressed size BEFORE expansion (per-entry and cumulative), so a
+ * crafted archive can't balloon RAM — parity with zipDocs.ts. (Loose image files
+ * don't decompress, so they carry no such risk; they're bounded by the upload cap.)
  */
 import { unzipSync } from "fflate";
+import { isImageName } from "./mediaType";
 
 export interface ZipImageIndex {
     /** Normalized full path within the archive → file bytes. */
@@ -50,6 +50,19 @@ export type RawImageSource =
     | { name: string; bytes: Uint8Array };
 
 /**
+ * Decompressed-size budget for ZIP sources (the zip-bomb guard). Without one,
+ * unzipSync expands the whole archive into memory; with one, an entry is rejected
+ * by its DECLARED uncompressed size before expansion. Production callers always
+ * pass this; the bare {@link indexZipImages} test wrapper omits it.
+ */
+export interface ZipBudget {
+    /** Skip (never decompress) any single entry whose decompressed size exceeds this. */
+    maxEntryBytes: number;
+    /** Stop accepting entries once cumulative decompressed bytes would exceed this. */
+    maxTotalBytes: number;
+}
+
+/**
  * Build one index from any mix of sources — ZIP archives (expanded) and/or
  * individually added image files. This is the single convergence point that
  * keeps "an image is an image" true no matter the transport. Throws only if a
@@ -59,8 +72,11 @@ export type RawImageSource =
  * Basename uniqueness (for bare-name references) is computed across the whole
  * merged set, so a name unique within one ZIP but colliding with a loose file
  * is correctly treated as ambiguous — the safe behavior.
+ *
+ * When `budget` is given, ZIP entries are filtered against it (and to image
+ * names) BEFORE decompression, so a crafted archive can't balloon memory.
  */
-export function indexImageSources(sources: readonly RawImageSource[]): ZipImageIndex {
+export function indexImageSources(sources: readonly RawImageSource[], budget?: ZipBudget): ZipImageIndex {
     const byPath = new Map<string, Uint8Array>();
     const baseCount = new Map<string, number>();
     const baseFirst = new Map<string, Uint8Array>();
@@ -76,9 +92,21 @@ export function indexImageSources(sources: readonly RawImageSource[]): ZipImageI
         if (!baseFirst.has(base)) baseFirst.set(base, data);
     };
 
+    let total = 0; // running decompressed bytes across all ZIP sources (budget guard)
     for (const src of sources) {
         if ("zip" in src) {
-            for (const [rawPath, data] of Object.entries(unzipSync(src.zip))) add(rawPath, data);
+            const files = budget
+                ? unzipSync(src.zip, {
+                    // Reject by central-directory metadata BEFORE decompressing.
+                    filter: ({ name, originalSize }) => {
+                        if (name.endsWith("/") || ZIP_JUNK_RE.test(name) || !isImageName(name)) return false;
+                        if (originalSize > budget.maxEntryBytes || total + originalSize > budget.maxTotalBytes) return false;
+                        total += originalSize;
+                        return true;
+                    },
+                })
+                : unzipSync(src.zip);
+            for (const [rawPath, data] of Object.entries(files)) add(rawPath, data);
         } else {
             add(src.name, src.bytes);
         }
