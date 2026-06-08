@@ -34,6 +34,14 @@ describe("tokenizeCsv", () => {
         const recs = tokenizeCsv('a,b\n"line1\nline2",c');
         expect(recs[1]).toEqual(["line1\nline2", "c"]);
     });
+
+    it("treats a quote not at field start as a literal character", () => {
+        expect(tokenizeCsv('a,6" tall,c')[0]).toEqual(["a", '6" tall', "c"]);
+    });
+
+    it("throws on an unterminated quoted field", () => {
+        expect(() => tokenizeCsv('a,b\n"oops,c')).toThrow(/Unterminated/);
+    });
 });
 
 describe("parseCsv", () => {
@@ -126,6 +134,12 @@ describe("parseCsv", () => {
         const body = Array.from({ length: 5 }, () => rowFor()).join("\n");
         const { rows, headerError } = parseCsv(`${HEADER}\n${body}`, Infinity, 3);
         expect(headerError).toMatch(/more than 3 rows/);
+        expect(rows).toHaveLength(0);
+    });
+
+    it("surfaces an unterminated quote as a header error (rows don't silently vanish)", () => {
+        const { rows, headerError } = parseCsv(`${HEADER}\n${rowFor()}\n"oops`);
+        expect(headerError).toMatch(/Unterminated/);
         expect(rows).toHaveLength(0);
     });
 

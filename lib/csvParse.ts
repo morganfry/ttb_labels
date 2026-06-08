@@ -75,7 +75,9 @@ export interface CsvParseResult {
  * batch.
  */
 export function parseCsv(text: string, maxImagesPerRow = Infinity, maxRows = Infinity): CsvParseResult {
-    const records = tokenizeCsv(text);
+    let records: string[][];
+    try { records = tokenizeCsv(text); }
+    catch (e) { return { rows: [], headerError: e instanceof Error ? e.message : "Malformed CSV." }; }
     if (records.length === 0) return { rows: [], headerError: "The CSV file is empty." };
 
     // Bound the work: reject an over-row-cap file before building a work item per
@@ -231,17 +233,20 @@ export function tokenizeCsv(text: string): string[][] {
             } else {
                 cell += ch;
             }
-        } else if (ch === '"') {
-            inQuotes = true;
+        } else if (ch === '"' && cell === "") {
+            inQuotes = true; // a quote only opens a field at its START (RFC 4180)
         } else if (ch === ",") {
             row.push(cell); cell = "";
         } else if (ch === "\n") {
             row.push(cell); cell = "";
             records.push(row); row = [];
         } else {
-            cell += ch;
+            cell += ch; // a '"' that isn't at field start is a literal char, not a toggle
         }
     }
+    // A still-open quote means a malformed file: without this, an unescaped " would
+    // swallow every remaining row into one cell and they'd silently vanish.
+    if (inQuotes) throw new Error('Unterminated quoted field — check the CSV for an unescaped " (use "" for a literal quote).');
     // Flush the final cell/row unless the input ended exactly on a newline.
     if (cell !== "" || row.length > 0) { row.push(cell); records.push(row); }
     return records;

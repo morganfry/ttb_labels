@@ -288,12 +288,23 @@ function naResult(key: keyof LabelExtraction, field: ExtractedField): FieldResul
 }
 
 /**
+ * A modifier that drops a spirit below its bare-class ABV floor: under 27 CFR 5
+ * a flavored spirit / liqueur / cordial (e.g. "Sloe Gin", "Flavored Vodka",
+ * "Rum Liqueur") has a lower standard-of-identity minimum (typically 30%), so the
+ * bare-class 40% floor must NOT apply to it.
+ */
+const ABV_FLOOR_EXEMPT_MODIFIERS = ["flavored", "flavoured", "sloe", "liqueur", "liquor", "cordial", "schnapps", "infused"];
+
+/**
  * Standard-of-identity minimum ABV for distilled-spirits designations (27 CFR 5:
- * e.g. rum / gin / vodka / whisky must state at least 40% ABV). The numeric
- * matcher only checks the ABV is present and parseable (it's label-only), so the
- * floor is enforced here, where both the designation (classType) and the ABV are
- * visible. Only overrides a clean pass; a low-confidence designation routes to
- * review rather than a confident fail.
+ * a bare rum / gin / vodka / whisky must state at least 40%). The numeric matcher
+ * only checks the ABV is present and parseable (it's label-only), so the floor is
+ * checked here, where both the designation (classType) and the ABV are visible.
+ *
+ * Deliberately conservative: it exempts flavored/liqueur variants (which carry a
+ * lower floor) and routes a below-floor value to REVIEW, not a confident fail —
+ * the matcher can't know every standard-of-identity nuance, and wrongly rejecting
+ * a compliant label is a real harm. Only ever escalates a clean pass.
  */
 function applyAbvFloor(fields: FieldResult[], label: LabelExtraction, ruleset: typeof RULESET_BY_TYPE[ProductType]): void {
     const floors = ruleset.abvMinByDesignation;
@@ -301,19 +312,14 @@ function applyAbvFloor(fields: FieldResult[], label: LabelExtraction, ruleset: t
     const ac = fields.find((f) => f.field === "alcoholContent");
     if (!ac || ac.status !== "pass") return; // only a clean pass can hide a below-floor value
     const words = (label.classType.value ?? "").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    if (words.some((w) => ABV_FLOOR_EXEMPT_MODIFIERS.includes(w))) return; // flavored/liqueur → lower floor
     const designation = Object.keys(floors).find((d) => words.includes(d)); // word match, so "Virgin" ≠ gin
     if (!designation) return;
     const abv = parsePercent(label.alcoholContent.value ?? "");
     if (abv === null) return;
-    const floor = floors[designation];
-    if (abv >= floor) return;
-    if (lowConfidence(label.classType.confidence)) {
-        ac.status = "review";
-        ac.issues = [...ac.issues, `${abv}% is below the ${floor}% minimum for "${designation}", but the class/type read was low-confidence — confirm.`];
-    } else {
-        ac.status = "fail";
-        ac.issues = [...ac.issues, `${abv}% ABV is below the ${floor}% minimum required for ${designation}.`];
-    }
+    if (abv >= floors[designation]) return;
+    ac.status = "review";
+    ac.issues = [...ac.issues, `${abv}% is below the usual ${floors[designation]}% minimum for "${designation}"; confirm the standard of identity (some flavored/liqueur variants allow less).`];
 }
 
 /**

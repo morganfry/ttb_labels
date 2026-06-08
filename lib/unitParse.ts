@@ -18,8 +18,14 @@ export function parsePercent(s: string): number | null {
         s.match(/(\d+(?:\.\d+)?)\s*%\s*(?:alc|abv|alcohol|by\s*vol|vol)/i)      // "40% Alc./Vol."
         ?? s.match(/(?:alc|abv|alcohol)[^%\d]{0,15}(\d+(?:\.\d+)?)\s*%/i);       // "Alc. 40%"
     if (tied) return parseFloat(tied[1]);
+    // No alcohol cue: fall back to a bare percentage, but only a PLAUSIBLE ABV.
+    // A stray "100%" is almost always a non-ABV claim ("100% Agave", "100% Grain
+    // Neutral Spirits") misrouted into this field — never 100% ABV — so don't let
+    // it read as a valid alcohol value and mask a missing/below-floor ABV.
     const m = s.match(/(\d+(?:\.\d+)?)\s*%/);
-    return m ? parseFloat(m[1]) : null;
+    if (!m) return null;
+    const n = parseFloat(m[1]);
+    return n <= 95 ? n : null; // 95% (Everclear) is the practical ceiling
 }
 
 /**

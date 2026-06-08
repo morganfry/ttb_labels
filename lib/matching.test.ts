@@ -61,6 +61,10 @@ describe("numeric parsers", () => {
         expect(parsePercent("Alc. 40% by Vol")).toBe(40);
         expect(parsePercent("40%")).toBe(40); // bare percentage still parses (fallback)
     });
+    it("rejects an implausible bare ABV with no alcohol cue ('100% Agave' is not 100% ABV)", () => {
+        expect(parsePercent("100% Grain Neutral Spirits")).toBeNull();
+        expect(parsePercent("100% Blue Weber Agave")).toBeNull();
+    });
     it("normalizes volume to mL", () => { expect(parseVolumeMl("750 mL")).toBe(750); expect(parseVolumeMl("0.75 L")).toBe(750); expect(parseVolumeMl("75 cL")).toBe(750); });
 });
 
@@ -242,14 +246,20 @@ describe("uncertain source → country-of-origin", () => {
 });
 
 describe("spirits minimum-ABV floor (standard of identity)", () => {
-    it("vodka below 40% fails", () => {
+    it("a bare spirit below its floor routes to review (not a confident fail)", () => {
         const r = statusOf(baseLabel({ classType: fld("Vodka"), alcoholContent: fld("30% Alc./Vol.") }), baseApp(), "alcoholContent");
-        expect(r.status).toBe("fail"); expect(r.issues.join(" ")).toMatch(/40% minimum/);
+        expect(r.status).toBe("review"); expect(r.issues.join(" ")).toMatch(/40% minimum/);
     });
     it("vodka at the floor passes", () => {
         expect(statusOf(baseLabel({ classType: fld("Vodka"), alcoholContent: fld("40% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("pass");
     });
-    it("below-floor with a low-confidence designation routes to review, not a hard fail", () => {
+    it("exempts flavored / sloe / liqueur variants, which carry a lower floor", () => {
+        // Compliant below-40% products that the bare-class floor must NOT reject.
+        expect(statusOf(baseLabel({ classType: fld("Sloe Gin"), alcoholContent: fld("30% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("pass");
+        expect(statusOf(baseLabel({ classType: fld("Flavored Vodka"), alcoholContent: fld("30% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("pass");
+        expect(statusOf(baseLabel({ classType: fld("Rum Liqueur"), alcoholContent: fld("35% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("pass");
+    });
+    it("low-confidence designation still routes to review", () => {
         expect(statusOf(baseLabel({ classType: fld("Vodka", "low"), alcoholContent: fld("30% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("review");
     });
     it("matches the designation as a WORD, not a substring (e.g. 'original' contains 'gin')", () => {
