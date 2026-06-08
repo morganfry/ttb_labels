@@ -42,8 +42,8 @@ export interface WorkItem {
 export interface ItemTimings {
     /** PDF slicing — form page + artwork pages (PDF path only). */
     prepMs?: number;
-    /** Resolving label images: URL fetch and/or ZIP read (CSV path only). */
-    fetchMs?: number;
+    /** Resolving label images from the uploaded set (CSV path only). */
+    resolveMs?: number;
     /** Label vision read. */
     labelMs?: number;
     /** Form vision read (PDF path only). */

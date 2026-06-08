@@ -4,7 +4,7 @@ import { useRef, useReducer, useMemo, useState, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Images, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { OVERALL_META, isZip, isImage } from "@/lib/uiTypes";
-import { parseCsv, isLocalImageRef, CSV_COLUMNS, IMAGE_URLS_COLUMN, type CsvRow } from "@/lib/csvParse";
+import { parseCsv, CSV_COLUMNS, IMAGE_REFS_COLUMN, type CsvRow } from "@/lib/csvParse";
 import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
 import { ReviewHistoryLink } from "./ReviewHistoryLink";
@@ -28,8 +28,8 @@ async function indexImageFiles(files: File[]): Promise<ZipImageIndex> {
 
 /** A worked example shown on the page and offered as a downloadable template. */
 const SAMPLE_CSV = `${CSV_COLUMNS.join(",")}
-24-1,wine,domestic,Sunset Ridge,Reserve,"Sunset Ridge Winery, 100 Vine St, Napa, CA 94558",Cabernet Sauvignon,Napa Valley,"[""https://example.com/labels/24-1-front.jpg"",""https://example.com/labels/24-1-back.jpg""]"
-24-2,distilledSpirits,imported,Old Pier Rum,,"Old Pier Distillers, London, UK",,,"[""https://example.com/labels/24-2.jpg""]"
+24-1,wine,domestic,Sunset Ridge,Reserve,"Sunset Ridge Winery, 100 Vine St, Napa, CA 94558",Cabernet Sauvignon,Napa Valley,"[""24-1-front.jpg"",""24-1-back.jpg""]"
+24-2,distilledSpirits,imported,Old Pier Rum,,"Old Pier Distillers, London, UK",,,"[""24-2.jpg""]"
 `;
 
 const COLUMN_NOTES: Record<string, string> = {
@@ -41,7 +41,7 @@ const COLUMN_NOTES: Record<string, string> = {
     applicantNameAddress: "Required. COLA item 8 — name + address.",
     grapeVarietals: "Optional, wine only. COLA item 10. If set, an appellation becomes required on the label.",
     wineAppellation: "Optional, wine only. COLA item 11.",
-    [IMAGE_URLS_COLUMN]: "Required. JSON array of image references — http(s) URLs and/or names of images you upload (loose files or in a ZIP), e.g. [\"front.jpg\",\"back.jpg\"]. Multiple entries are treated as views of one label.",
+    [IMAGE_REFS_COLUMN]: "Required. JSON array of image file names you upload alongside the CSV (loose files or in a ZIP), e.g. [\"front.jpg\",\"back.jpg\"]. Multiple entries are treated as views of one label.",
 };
 
 type RowIssue = { rowNumber: number; error: string };
@@ -60,15 +60,13 @@ function buildPreview(rows: CsvRow[], imageIndex: ZipImageIndex | null): Preview
     const imageIssues: RowIssue[] = [];
     let needsImages = false;
     for (const r of rows) {
-        if (r.error || !r.imageRefs) continue;
-        const locals = r.imageRefs.filter(isLocalImageRef);
-        if (locals.length === 0) continue;
+        if (r.error || !r.imageRefs || r.imageRefs.length === 0) continue;
         needsImages = true;
         if (!imageIndex) {
-            imageIssues.push({ rowNumber: r.rowNumber, error: `needs ${locals.length} uploaded image${locals.length === 1 ? "" : "s"}` });
+            imageIssues.push({ rowNumber: r.rowNumber, error: `needs ${r.imageRefs.length} uploaded image${r.imageRefs.length === 1 ? "" : "s"}` });
             continue;
         }
-        const missing = locals.filter((n) => !zipHasImage(imageIndex, n));
+        const missing = r.imageRefs.filter((n) => !zipHasImage(imageIndex, n));
         if (missing.length) imageIssues.push({ rowNumber: r.rowNumber, error: `not found among uploads: ${missing.join(", ")}` });
     }
     return { validCount: rows.length - invalid.length, invalid, imageIssues, needsImages };
@@ -291,7 +289,7 @@ export default function CsvVerify() {
                 >
                     <Upload size={40} strokeWidth={1.5} className={`mx-auto mb-3 ${dragging ? "text-blue-600" : "text-slate-500"}`} />
                     <div className="text-lg font-semibold">{dragging ? "Drop the CSV to add it" : "Drag a CSV here, or click to browse"}</div>
-                    <div className="text-sm text-slate-400">One application per row; the last column lists label images by URL or by file name (upload the images below).</div>
+                    <div className="text-sm text-slate-400">One application per row; the last column lists each label image by file name (upload the images below).</div>
                     <input ref={inputRef} type="file" accept=".csv,text/csv" className="hidden"
                            onChange={(e) => { onPick(e.target.files); e.target.value = ""; }} />
                 </div>
@@ -315,9 +313,9 @@ export default function CsvVerify() {
                 </div>
             )}
 
-            {/* Optional label images (loose files and/or ZIPs), for rows that name
-                files instead of URLs. A hidden multi-input is shared by the empty
-                dropzone and the "Add more" button. */}
+            {/* Label images (loose files and/or ZIPs) the CSV rows reference by
+                name. A hidden multi-input is shared by the empty dropzone and the
+                "Add more" button. */}
             {file && (
                 <input ref={imageInputRef} type="file" multiple accept=".zip,application/zip,image/*" className="hidden"
                        onChange={(e) => { onPickImages(e.target.files); e.target.value = ""; }} />
@@ -477,15 +475,15 @@ function CsvFormatGuide({ onDownload }: { onDownload: () => void }) {
             </div>
             <p className="mb-3 text-sm text-slate-500">
                 One application per row. The application (COLA Part I) fields are columns; the label artwork is referenced
-                by the final <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{IMAGE_URLS_COLUMN}</code> column,
-                a JSON array of image references. The app reads those images, then verifies them against the row.
+                by the final <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{IMAGE_REFS_COLUMN}</code> column,
+                a JSON array of image <strong>file names</strong> (e.g. <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{"[\"24-1-front.jpg\"]"}</code>).
+                The app reads those images, then verifies them against the row.
             </p>
             <p className="mb-3 text-sm text-slate-500">
-                Each reference is either an <strong>http(s) URL</strong> (fetched by the server) or the <strong>file name</strong>
-                of an image you upload alongside the CSV (e.g. <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{"[\"24-1-front.jpg\"]"}</code>).
-                Upload the images — individually or in a ZIP — when the label art lives on your machine rather than at a public URL.
-                A name may include a folder path (<code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">labels/24-1.jpg</code>);
-                a bare file name resolves if it is unique across everything you uploaded.
+                Upload the images themselves — individually and/or in a ZIP — alongside the CSV; the app resolves each name
+                against what you uploaded (it never fetches images over the network). A name may include a folder path
+                (<code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">labels/24-1.jpg</code>); a bare file name
+                resolves if it is unique across everything you uploaded.
             </p>
 
             <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50">

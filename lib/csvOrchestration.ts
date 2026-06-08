@@ -1,17 +1,17 @@
 /**
- * Batch processing for the CSV bulk path: fetch each row's label images,
- * transcribe them, match against the row's application data, persist, and
- * stream each verdict.
+ * Batch processing for the CSV bulk path: resolve each row's label images from
+ * the uploaded set, transcribe them, match against the row's application data,
+ * persist, and stream each verdict.
  *
  * This mirrors lib/orchestration.ts (the PDF path) and reuses its worker pool
  * ({@link runPool}) and outcome/summary types verbatim, so both paths produce
  * identical streaming behavior and result shapes. The only difference is the
  * per-item pipeline: the application side comes from CSV columns (no form
  * extraction, no PDF slicing) while the label side is still model-read from the
- * fetched images.
+ * uploaded images.
  */
 import { runPool, type ItemOutcome, type ItemTimings, type BatchErrorInfo, type BatchSummary, type PoolOptions } from "./orchestration";
-import { resolveLabelImages, ImageFetchError } from "./imageFetch";
+import { resolveLabelImages } from "./imageResolve";
 import { parseLabel } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError } from "./extraction";
@@ -24,7 +24,7 @@ export interface CsvWorkItem {
     id: string;
     name: string;
     app: ApplicationData;
-    /** http(s) URLs and/or file names inside {@link CsvBatchOptions.zipImages}. */
+    /** File names resolved from {@link CsvBatchOptions.zipImages} (uploaded images). */
     imageRefs: string[];
     /** Pre-set failure for a row that failed CSV parsing; short-circuits work. */
     preError?: BatchErrorInfo;
@@ -37,9 +37,9 @@ export interface CsvBatchOptions extends PoolOptions {
     labelModel?: string;
     /** Injection seam for tests; defaults to the real model-backed parser. */
     parseLabel?: typeof parseLabel;
-    /** Injection seam for tests; defaults to the real URL/ZIP resolver. */
+    /** Injection seam for tests; defaults to the real uploaded-image resolver. */
     resolveImages?: typeof resolveLabelImages;
-    /** In-memory index of an uploaded image ZIP, for local-file references. */
+    /** In-memory index of the uploaded images (loose files and/or a ZIP). */
     zipImages?: ZipImageIndex;
 }
 
@@ -70,14 +70,15 @@ async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<
     const label = opts.parseLabel ?? parseLabel;
 
     let inputs;
-    const fetchStart = Date.now();
+    const resolveStart = Date.now();
     try {
         inputs = await resolveImages(item.imageRefs, opts.zipImages);
     } catch (e) {
-        const retryable = e instanceof ImageFetchError && /timed out|\b5\d\d\b/i.test(e.message);
-        return fail({ kind: "extraction", stage: "label", message: `Image fetch failed: ${msg(e)}`, retryable });
+        // Resolution failures are permanent (a missing/invalid uploaded image),
+        // not transient — re-running won't help, so they're not retryable.
+        return fail({ kind: "extraction", stage: "label", message: `Could not resolve label image: ${msg(e)}`, retryable: false });
     }
-    timings.fetchMs = Date.now() - fetchStart;
+    timings.resolveMs = Date.now() - resolveStart;
 
     let labelRes;
     const labelStart = Date.now();

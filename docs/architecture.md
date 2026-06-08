@@ -15,12 +15,13 @@ prompt.
 
 ## 1. System context
 
-A single Next.js deployable plus a database, talking to one external service (the
-vision model) and — for CSV-by-URL intake only — arbitrary image hosts. The
-dashed box is the trust/network boundary: the only required outbound traffic is
-to the model API, which in a locked-down federal network must be allow-listed
-(or, more likely in production, swapped for Claude on in-VPC AWS Bedrock — a
-localized change at `extraction.ts`; see README limitations).
+A single Next.js deployable plus a database, talking to exactly one external
+service: the vision model. The dashed box is the trust/network boundary — the
+only outbound traffic is to the model API, which in a locked-down federal network
+must be allow-listed (or, more likely in production, swapped for Claude on in-VPC
+AWS Bedrock — a localized change at `extraction.ts`; see README limitations).
+Label images are always uploaded by the agent, never fetched, so there is no
+outbound image traffic and no SSRF surface.
 
 ```mermaid
 flowchart LR
@@ -34,21 +35,19 @@ flowchart LR
 
     subgraph cloud["Outside the deployment network"]
         model["Anthropic vision model API<br/>(label + form transcription)"]
-        imgs["Label image hosts<br/>(CSV URL intake only)"]
     end
 
     agent -->|"upload PDFs / images / CSV, read verdicts"| ui
     ui -->|"persist + query"| db
     ui -->|"HTTPS outbound — needs allow-listing"| model
-    ui -->|"fetch images (best-effort SSRF guard)"| imgs
 ```
 
 Notes:
 - **No COLA integration** — this is a standalone proof-of-concept by design.
 - **Retention:** only extracted text and verdicts are stored. Uploaded PDFs and
-  label images (URL- or upload-sourced) are processed in memory and discarded.
-- The CSV **uploaded-images** option (loose files and/or a ZIP) avoids the `imgs`
-  edge entirely, which is the safer choice when outbound fetching is restricted.
+  label images are processed in memory and discarded.
+- **CSV label images are uploaded, never fetched** (loose files and/or a ZIP) —
+  no outbound image request, the safer choice in a restricted network.
 
 ---
 
@@ -60,7 +59,7 @@ Two intake fronts — the **upload tab** (combined PDFs or flat images) and
 = label) while an image can't be, so the one image is read by both parsers; a
 dropped ZIP is expanded client-side (`zipDocs`) into individual PDF/image items.
 The CSV path swaps the *front* entirely: application data comes from columns and
-label images are resolved from URLs and/or uploaded images (loose files and/or a
+label images are resolved by name from the uploaded images (loose files and/or a
 ZIP). From matching onward all paths are identical.
 
 ```mermaid
@@ -87,7 +86,7 @@ flowchart LR
         zipdocs["zipDocs (pure)<br/>expand upload ZIP → PDF/image items"]
         mediatype["mediaType (pure)<br/>name → PDF / image / ZIP + media type"]
         csvparse["csvParse<br/>columns → ApplicationData + image refs"]
-        imgs["imageFetch · zipImages<br/>resolve label images (URL / upload)"]
+        imgs["imageResolve · zipImages<br/>resolve label images (uploaded)"]
         parsers["parsers<br/>parseLabel · parseForm"]
         extraction["extraction<br/>shared vision-model call"]
         matching["matching.verify<br/>THE JUDGE — confidence-gated"]
@@ -136,7 +135,7 @@ Reading aids:
   model id is a per-call argument (label defaults to a faster tier, form to the
   general one; see `config.ts`).
 - **An image is an un-sliceable PDF.** `mediaType` (the single source of file-type
-  knowledge, shared by the route, `zipDocs`, `csvParse`, and `imageFetch`) tells
+  knowledge, shared by the route, `zipDocs`, `csvParse`, and `imageResolve`) tells
   `processOne` whether to slice the PDF or feed the one image to both parsers. No
   separate image route or parser exists — only the media type differs.
 - **`persistence` is a barrel** — the rest of the app imports from it, not from
@@ -195,10 +194,9 @@ label and form parsers. Everything from transcription onward is identical.
 
 **CSV variant.** Same diagram with the front swapped: instead of slicing a PDF
 and model-reading the form, `csvParse` turns the row's columns into the
-application data, and `imageFetch`/`zipImages` resolve the label images (from
-URLs and/or uploaded images — loose files and/or a ZIP). The label is still
-model-read; `verify`, persistence,
-streaming, and the shared `runPool` are identical.
+application data, and `imageResolve`/`zipImages` resolve the label images by name
+from the uploaded set (loose files and/or a ZIP). The label is still model-read;
+`verify`, persistence, streaming, and the shared `runPool` are identical.
 
 ---
 

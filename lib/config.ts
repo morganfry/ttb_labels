@@ -33,11 +33,10 @@ export const config = {
      * nobody's going to use it"). Purely a display benchmark — it colors the
      * measured per-item timing in the UI; it changes no verdict. */
     latencyTargetMs: intFromEnv("LATENCY_TARGET_MS", 5000),
-    /* CSV bulk path: label images come from per-row URLs or an uploaded ZIP of
-     * local files. These bound that intake so one bad row (or archive) can't
-     * stall or balloon a batch. */
+    /* CSV bulk path: label images are uploaded alongside the CSV (loose files
+     * and/or a ZIP) and resolved from memory. These bound that intake so one bad
+     * row (or archive) can't balloon a batch. */
     csvImageMaxBytes: intFromEnv("CSV_IMAGE_MAX_BYTES", 12 * 1024 * 1024),
-    csvImageFetchTimeoutMs: intFromEnv("CSV_IMAGE_FETCH_TIMEOUT_MS", 15000),
     csvMaxImagesPerRow: intFromEnv("CSV_MAX_IMAGES_PER_ROW", 6),
     /* Cap on the uploaded image-ZIP (compressed) — a blunt zip-bomb mitigation,
      * since extraction decompresses the whole archive into memory. */

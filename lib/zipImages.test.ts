@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { zipSync } from "fflate";
 import { indexZipImages, indexImageSources, lookupZipImage, zipHasImage, normalizeZipPath } from "./zipImages";
-import { resolveLabelImages, ImageFetchError } from "./imageFetch";
+import { resolveLabelImages, ImageResolveError } from "./imageResolve";
 
 const bytes = (s: string) => new TextEncoder().encode(s);
 
@@ -80,8 +80,8 @@ describe("indexImageSources (loose files and ZIPs in one index)", () => {
     });
 });
 
-describe("resolveLabelImages (local references)", () => {
-    it("resolves a local file from the ZIP to a model input", async () => {
+describe("resolveLabelImages (from uploaded images)", () => {
+    it("resolves an uploaded file to a model input", async () => {
         const idx = indexZipImages(zip({ "front.png": "PNGDATA" }));
         const inputs = await resolveLabelImages(["front.png"], idx);
         expect(inputs).toHaveLength(1);
@@ -90,11 +90,11 @@ describe("resolveLabelImages (local references)", () => {
         expect(inputs[0].base64.length).toBeGreaterThan(0);
     });
 
-    it("rejects a local reference when no ZIP was provided", async () => {
-        await expect(resolveLabelImages(["front.png"])).rejects.toBeInstanceOf(ImageFetchError);
+    it("rejects a reference when nothing was uploaded", async () => {
+        await expect(resolveLabelImages(["front.png"])).rejects.toBeInstanceOf(ImageResolveError);
     });
 
-    it("rejects a local reference missing from the ZIP", async () => {
+    it("rejects a reference missing from the uploads", async () => {
         const idx = indexZipImages(zip({ "front.png": "X" }));
         await expect(resolveLabelImages(["back.png"], idx)).rejects.toThrow(/not found among the uploaded images/);
     });

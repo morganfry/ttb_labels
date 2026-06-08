@@ -1,13 +1,12 @@
 /**
- * Builds an in-memory index of label images for the CSV bulk path. This is the
- * local-file alternative to fetching images by URL: a CSV cell can name an image
- * the agent uploads instead of a public URL, so artwork on disk can be
- * bulk-verified without hosting it anywhere (and without relaxing the URL-fetch
- * SSRF guard).
+ * Builds an in-memory index of label images for the CSV bulk path. A CSV cell
+ * names an image the agent uploads; the app resolves it from this index and
+ * never fetches anything over the network — so artwork can be bulk-verified
+ * without hosting it anywhere, and there is no outbound/SSRF surface.
  *
  * The images arrive as one of two transports — a ZIP archive, or individually
  * added image files — but converge on ONE index ({@link indexImageSources}), so
- * the per-row resolve (imageFetch.ts) and the client preview behave identically
+ * the per-row resolve (imageResolve.ts) and the client preview behave identically
  * regardless of how the images were uploaded. A ZIP is just bulk transport.
  *
  * Pure and framework-free so it runs both server-side (resolve real bytes) and

@@ -8,7 +8,7 @@ import { FieldCards } from "./FieldCards";
 /** Stage keys (ItemTimings) → display labels, in pipeline order. */
 const STAGE_LABELS: [keyof NonNullable<Item["timings"]>, string][] = [
     ["prepMs", "Slice"],
-    ["fetchMs", "Fetch images"],
+    ["resolveMs", "Resolve images"],
     ["labelMs", "Label read"],
     ["formMs", "Form read"],
     ["matchMs", "Match"],

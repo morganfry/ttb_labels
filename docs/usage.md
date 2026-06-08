@@ -19,15 +19,15 @@ The app has two screens, linked by the top navigation: **Verify** (review new ap
 
 ## Bulk verification by CSV
 
-Switch to the **CSV bulk** tab on the Verify screen when you already have the application data in a spreadsheet and the label artwork hosted at a URL or saved locally.
+Switch to the **CSV bulk** tab on the Verify screen when you already have the application data in a spreadsheet and the label artwork as image files.
 
-1. **Prepare the CSV.** One application per row. The COLA Part I fields are columns; the final `labelImageUrls` column is a JSON array of image references — each either an http(s) URL or the name of an image you upload (a folder path like `labels/24-1.jpg` works; a bare file name resolves if it is unique across everything you uploaded). The tab shows the full column list with notes, a worked example, and a **Download template** button. Required columns: `serialNumber`, `productType` (`wine` / `distilledSpirits` / `maltBeverages`), `source` (`domestic` / `imported`), `brandName`, `applicantNameAddress`, and `labelImageUrls`. Multiple references in one row are treated as several views (front / back / neck) of a single label.
+1. **Prepare the CSV.** One application per row. The COLA Part I fields are columns; the final `labelImages` column is a JSON array of image **file names** you upload alongside the CSV (a folder path like `labels/24-1.jpg` works; a bare file name resolves if it is unique across everything you uploaded). The tab shows the full column list with notes, a worked example, and a **Download template** button. Required columns: `serialNumber`, `productType` (`wine` / `distilledSpirits` / `maltBeverages`), `source` (`domestic` / `imported`), `brandName`, `applicantNameAddress`, and `labelImages`. Multiple names in one row are treated as several views (front / back / neck) of a single label.
 
 2. **Upload it.** Drag the CSV in or browse to it. The app parses it immediately and shows how many rows are valid and lists any rows with errors (a bad product type, a malformed reference array, a missing required value). Bad rows don't block the others — they're reported, not verified.
 
 3. **(If using local files) upload the images.** When any row references files by name, an uploader appears — drop the images individually and/or as a ZIP. The app reads them in the browser and flags any referenced file that isn't among them, before you run. URL-only batches can skip this.
 
-4. **Verify.** Click **Verify N rows**. As with PDFs, results stream into the same table row by row, with the same per-field verdicts and expandable detail. Rows whose images couldn't be fetched, found in the ZIP, or read are listed separately with the reason.
+4. **Verify.** Click **Verify N rows**. As with PDFs, results stream into the same table row by row, with the same per-field verdicts and expandable detail. Rows whose images weren't found among the uploads, or couldn't be read, are listed separately with the reason.
 
 ## Searching past reviews
 

@@ -1,6 +1,6 @@
 # TTB Label Verification — Prototype
 
-An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads combined application documents; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted three ways: as a combined PDF, as a flat image (JPG/PNG) of one, or — for bulk runs — as a CSV of application data whose label images are given by URL or by file name, with the images uploaded alongside (loose files and/or a ZIP).
+An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads combined application documents; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted three ways: as a combined PDF, as a flat image (JPG/PNG) of one, or — for bulk runs — as a CSV of application data whose label images are referenced by file name and uploaded alongside (loose files and/or a ZIP).
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
@@ -25,9 +25,9 @@ Running on the host instead, the full environment-variable list, and container d
 
 ## Features
 
-- **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or uploaded image files — loose or in a ZIP). Both feed the identical matching, persistence, and results pipeline.
+- **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from uploaded image files (loose or in a ZIP), referenced by name. Both feed the identical matching, persistence, and results pipeline.
 - **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed) **or a flat image (JPG/PNG/WebP/GIF)** of one — a PDF is sliced (page 1 = form, artwork pages = label), while an image (which can't be sliced) is read whole by both parsers. Also accepts a ZIP of such files — expanded in the browser, each file joins the same queue and pipeline (with a real per-entry/total decompressed budget).
-- **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of image references. Each reference is either an http(s) URL or the name of a file inside an optional ZIP of label images uploaded alongside the CSV — so artwork on disk can be verified without hosting it. The app reads and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of local files against the ZIP, and a downloadable template.
+- **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImages` column holding a JSON array of image **file names**. The images themselves are uploaded alongside the CSV (loose files and/or a ZIP) and resolved by name — the server never fetches anything over the network. The app transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of referenced names against the uploaded images, and a downloadable template.
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
 - **Verification** — deterministic matching checks each field with the logic appropriate to it: tolerant matching for names, numeric tolerance for alcohol content and net contents, strict exact matching for the government warning.
 - **Streaming results** — applications process concurrently and results stream back per-item, filling a color-coded table (green / amber / red per field) as each finishes. A summary strip tallies passed / needs-review / failed.
@@ -73,7 +73,7 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 ## Assumptions
 
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
-- For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image references resolve to that application's label artwork: either http(s) URLs reachable from the server, or files present among the uploaded images (loose files and/or a ZIP).
+- For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image names resolve to that application's label artwork among the uploaded images (loose files and/or a ZIP).
 - The canonical government-warning text used for the strict check is the standard 27 CFR 16.21 wording (verified verbatim against the current regulation on 2026-06-07). Re-verify if the regulation ever changes — the strict matcher is only as correct as that constant.
 - Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default is used, but in production this should gate to human confirmation, since it controls the whole comparison profile.
 - The reviewing agent makes the final call. Every "review" outcome is an invitation for human judgment, not an automated rejection.
@@ -94,7 +94,7 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 
 ### Security & resource limits
 
-- **CSV image fetching is server-side and only lightly guarded.** When a row references images by URL, the server fetches arbitrary URLs. There is a best-effort SSRF guard (http(s) only; loopback, link-local, and RFC-1918 hosts rejected) and size/timeout caps, but it is not DNS-rebinding-proof. A production deployment should front it with an allow-list or an egress proxy. The ZIP option avoids outbound fetches entirely and is the safer choice in a locked-down network. Net-contents and ABV still come from the label image, not the CSV, so a CSV row can't assert compliance values directly.
+- **CSV label images are uploaded, never fetched.** The bulk path resolves each `labelImages` name against the images the agent uploads (loose files and/or a ZIP); the server makes no outbound request, so there is no URL-fetch / SSRF surface — a deliberate choice for a locked-down network. (Net contents and ABV still come from the label image, not the CSV, so a row can't assert compliance values directly.)
 
 - **The CSV image ZIP is fully decompressed in memory.** Both the server (resolve) and the client (pre-flight cross-check) expand the whole archive, bounded only by a blunt compressed-size cap (`CSV_IMAGE_ZIP_MAX_BYTES`) — not a decompressed-size budget, so it is not hardened against a crafted "zip bomb." Production should stream-extract with a hard per-entry and total decompressed limit.
 
@@ -114,4 +114,4 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 
 ### Data and retention
 
-The prototype stores extracted text and verdicts only. Uploaded PDFs and label images — including images fetched from CSV URLs and images uploaded for a CSV run (loose files or a ZIP) — are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. CSV image references (URLs and file names) are not persisted. A production system would need an explicit retention policy and the corresponding federal compliance review.
+The prototype stores extracted text and verdicts only. Uploaded PDFs and label images — including the images uploaded for a CSV run (loose files or a ZIP) — are processed in memory and discarded, which sidesteps document-retention and PII questions for a proof-of-concept. CSV image references (file names) are not persisted. A production system would need an explicit retention policy and the corresponding federal compliance review.

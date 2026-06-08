@@ -18,14 +18,15 @@ running it see docs/setup.md.
 - **Two ingestion paths, one judge.** PDF intake (orchestration.ts) and CSV
   intake (csvOrchestration.ts) converge on the SAME label extraction, matchers,
   persistence, and streaming. CSV replaces only the *form* read with explicit
-  columns; the label is still model-read from images resolved per row — http(s)
-  URLs (fetched) or file names resolved from the uploaded images. Those uploads
+  columns; the label is still model-read from images resolved per row — by file
+  name from the images the agent uploaded (the app NEVER fetches images over the
+  network — no URL intake, no SSRF surface; a deliberate choice). Those uploads
   arrive as loose image files AND/OR ZIP archives, but converge on ONE in-memory
   index (indexImageSources in zipImages.ts) — a ZIP is bulk transport, not a
   separate path. Both run through `runPool` (orchestration.ts) — keep the worker
   pool shared, not forked. Don't let the CSV path acquire its own matching or
   persistence logic, and route every image reference through resolveLabelImages
-  (imageFetch.ts), not a second code path.
+  (imageResolve.ts), not a second code path.
 - **PDF and image are one path; an image is just an un-sliceable PDF.** The
   upload tab accepts combined-application PDFs AND flat images (JPG/PNG/…), each
   one application. WorkItem.mediaType (inferred from the file name in the verify
@@ -87,11 +88,6 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   limitations). Mitigated by the confidence gate, not eliminated.
 - parseVolumeMl handles mL/cL/L/fl oz only; compound US ("1 PINT 9 FL OZ")
   flags for review by design.
-- CSV image fetch (imageFetch.ts) has a BEST-EFFORT SSRF guard only (http(s)
-  only; loopback/link-local/RFC-1918 rejected) — not DNS-rebinding-proof.
-  Production needs an allow-list or egress proxy. Don't widen it silently. The
-  uploaded-image option (loose files or ZIP) sidesteps fetching entirely
-  (preferred in locked-down nets).
 - CSV image ZIP (zipImages.ts) is decompressed WHOLE into memory on both server
   and client; bounded only by csvImageZipMaxBytes — which now caps the COMBINED
   uploaded image bytes (loose files + ZIPs), still compressed, NOT a
@@ -119,12 +115,11 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
 - CSV columns mirror ApplicationData; the canonical list + validation live in
   csvParse.ts (CSV_COLUMNS). A new application field → add it there AND to the
   UI guide (CsvVerify.tsx COLUMN_NOTES / SAMPLE_CSV), kept in sync.
-- labelImageUrls entries are image *references*, not just URLs: an http(s) URL
-  OR a relative file name resolved from the uploaded images (loose files or ZIP).
-  Per-entry validation
-  (scheme/extension/traversal) lives in csvParse.ts validateImageRef; the
-  url-vs-local split is isLocalImageRef. Keep that classification in csvParse so
-  both the client preview and server resolve agree.
+- labelImages entries are file names of uploaded images (loose files or ZIP),
+  resolved from the in-memory index. Per-entry validation lives in csvParse.ts
+  validateImageRef — it REJECTS URLs/other schemes (images are uploaded, not
+  linked) and absolute/traversal paths, and requires an image extension. Keep
+  that validation in csvParse so the client preview and server resolve agree.
 - parseLabel accepts one ExtractionInput or an array (multi-view labels); the
   array is sent as multiple content blocks in ONE model call, not N calls.
 - New matcher → matching.ts; pure helpers → textNormalize.ts / unitParse.ts.
@@ -172,7 +167,7 @@ Form 5100.31). An agent uploads one or more combined application PDFs; the app
 extracts the label fields and the form's Part I data, checks them against TTB
 requirements, and returns a per-field pass / review / fail verdict in a
 searchable table. Two intake modes: combined PDFs, or a CSV of application data
-whose label images are given by URL or by file name, with the images uploaded alongside (loose files and/or a ZIP), for bulk runs.
+whose label images are referenced by file name and uploaded alongside (loose files and/or a ZIP), for bulk runs.
 
 This is a standalone proof-of-concept. It does not integrate with the live COLA system.
 
@@ -183,10 +178,10 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 - Upload — drag-and-drop or browse, single or bulk; combined application PDFs
   (a filled COLA form with the label artwork affixed).
 - CSV bulk — one application per row: COLA Part I fields as columns + a final
-  labelImageUrls column (JSON array of image references — http(s) URLs and/or
-  names of uploaded image files — loose or in an optional ZIP). The app reads those images, then
-  verifies against the row. The tab shows the format, an
-  example, and a downloadable template.
+  labelImages column (JSON array of image file names you upload alongside the
+  CSV — loose files and/or a ZIP). The app reads those images, then verifies
+  against the row. The tab shows the format, an example, and a downloadable
+  template.
 - Field extraction — a vision model transcribes label and form fields with a
   per-field confidence rating.
 - Verification — deterministic matching: tolerant for names, numeric tolerance
@@ -205,8 +200,8 @@ pages → extract label + form concurrently (two prompts, one shared integration
 per-side model tiers) → deterministic, confidence-gated matching → persist (text +
 verdicts only) → stream result.
 CSV path: same pipeline with the front swapped — application data from columns,
-label images fetched from URLs and transcribed; matching onward is identical
-and shares the same worker pool.
+label images resolved by name from the uploaded set and transcribed; matching
+onward is identical and shares the same worker pool.
 
 Layers:
 - Frontend (Next.js App Router, React, Tailwind) — Verify (`/`, PDF + CSV tabs)
@@ -273,9 +268,8 @@ MODEL=claude-...         # optional; general/default model (default in lib/confi
 LABEL_MODEL=claude-...   # optional; label read (default: faster tier, claude-haiku-4-5)
 FORM_MODEL=claude-...    # optional; form read (default: MODEL / claude-sonnet-4-6)
 BATCH_CONCURRENCY=6      # optional concurrency override
-CSV_IMAGE_MAX_BYTES=12582912      # optional; per-image size cap for CSV fetches
-CSV_IMAGE_FETCH_TIMEOUT_MS=15000  # optional; per-image fetch timeout (CSV path)
-CSV_MAX_IMAGES_PER_ROW=6          # optional; max image URLs per CSV row
+CSV_IMAGE_MAX_BYTES=12582912      # optional; per-image size cap for uploaded CSV images
+CSV_MAX_IMAGES_PER_ROW=6          # optional; max images per CSV row
 ```
 `.env.local` is gitignored and read only in local development.
 
@@ -324,9 +318,9 @@ sets `X-Accel-Buffering: no` for nginx).
   callModelWithRetry in extraction.ts, and Bedrock Claude takes the same messages
   shape/prompts so accuracy is unchanged. (Kept as Anthropic-only here on purpose
   — a provider abstraction is YAGNI for the prototype; see README limitations.)
-- CSV image fetching is server-side with only a best-effort SSRF guard (http(s)
-  only; loopback/link-local/RFC-1918 rejected) + size/timeout caps; production
-  needs an allow-list or egress proxy.
+- CSV label images are uploaded, never fetched — the server makes no outbound
+  request (no URL intake, no SSRF surface), a deliberate choice for a locked-down
+  network.
 - Dropped ZIPs ARE expanded in the browser: the upload tab expands a ZIP of
   PDFs/images (zipDocs.ts, with a real decompressed budget); the CSV tab reads a
   ZIP of label images in memory (zipImages.ts, compressed-size cap only).
@@ -335,6 +329,6 @@ sets `X-Accel-Buffering: no` for nginx).
 
 ### Data and retention
 Only extracted text and verdicts are stored; uploaded PDFs and label images
-(including images fetched from CSV URLs) are processed in memory and discarded;
-CSV image URLs are not persisted. A production system would need an explicit
+(including images uploaded for a CSV run) are processed in memory and discarded;
+CSV image file names are not persisted. A production system would need an explicit
 retention policy and federal compliance review.

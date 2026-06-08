@@ -1,14 +1,14 @@
 /**
  * POST /api/verify-csv — bulk-verify applications from a CSV upload.
  *
- * Accepts multipart form data with a `csv` file and optional label-image
- * uploads: `images` parts (ZIP archives) and/or `image` parts (individual image
- * files). Each row supplies the COLA Part I values in named columns plus a JSON
- * array of label-image references — http(s) URLs (fetched) and/or file names
- * resolved from the uploaded images (read from memory). The server transcribes
- * the images, matches them against the row, and streams one NDJSON line per
- * finished row — the same wire format as /api/verify, so the client renders
- * both paths identically.
+ * Accepts multipart form data with a `csv` file and the label-image uploads:
+ * `images` parts (ZIP archives) and/or `image` parts (individual image files).
+ * Each row supplies the COLA Part I values in named columns plus a JSON array of
+ * label-image file names, resolved from the uploaded images (read from memory —
+ * the server never fetches images over the network). The server transcribes the
+ * images, matches them against the row, and streams one NDJSON line per finished
+ * row — the same wire format as /api/verify, so the client renders both paths
+ * identically.
  */
 import { processCsvBatch, type CsvWorkItem } from "@/lib/csvOrchestration";
 import { parseCsv } from "@/lib/csvParse";

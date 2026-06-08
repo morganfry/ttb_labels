@@ -14,7 +14,7 @@ function rowFor(overrides: Partial<Record<string, string>> = {}): string {
         grapeVarietals: "Cabernet",
         wineAppellation: "Napa Valley",
         // JSON array, quoted because it contains commas/quotes
-        labelImageUrls: '["https://example.com/front.jpg","https://example.com/back.jpg"]',
+        labelImages: '["front.jpg","back.jpg"]',
     };
     const merged = { ...base, ...overrides };
     return CSV_COLUMNS.map((c) => {
@@ -51,7 +51,7 @@ describe("parseCsv", () => {
             applicantNameAddress: "Acme Wines, Napa CA",
             wineAppellation: "Napa Valley",
         });
-        expect(row.imageRefs).toEqual(["https://example.com/front.jpg", "https://example.com/back.jpg"]);
+        expect(row.imageRefs).toEqual(["front.jpg", "back.jpg"]);
     });
 
     it("flags a header missing required columns", () => {
@@ -75,50 +75,50 @@ describe("parseCsv", () => {
         expect(rows[0].error).toMatch(/Invalid source/);
     });
 
-    it("requires at least one image URL", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "[]" })}`);
-        expect(rows[0].error).toMatch(/at least one image URL/);
+    it("requires at least one image", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: "[]" })}`);
+        expect(rows[0].error).toMatch(/at least one image/);
     });
 
-    it("rejects a malformed image cell that is neither JSON nor a valid reference", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "not-json" })}`);
-        expect(rows[0].error).toMatch(/JSON array of image references/);
+    it("rejects a malformed image cell that is neither JSON nor a valid file name", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: "not-json" })}`);
+        expect(rows[0].error).toMatch(/JSON array of uploaded-image file names/);
     });
 
-    it("accepts a bare single URL as a one-element list", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "https://example.com/one.jpg" })}`);
-        expect(rows[0].imageRefs).toEqual(["https://example.com/one.jpg"]);
-    });
-
-    it("accepts local image file names (resolved later from the ZIP)", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["front.jpg","labels/24-1-back.png"]' })}`);
+    it("accepts uploaded-image file names", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: '["front.jpg","labels/24-1-back.png"]' })}`);
         expect(rows[0].error).toBeUndefined();
         expect(rows[0].imageRefs).toEqual(["front.jpg", "labels/24-1-back.png"]);
     });
 
-    it("accepts a bare single local file name", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: "front.webp" })}`);
+    it("accepts a bare single file name", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: "front.webp" })}`);
         expect(rows[0].imageRefs).toEqual(["front.webp"]);
     });
 
-    it("rejects non-http URL schemes", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["ftp://example.com/x.jpg"]' })}`);
-        expect(rows[0].error).toMatch(/http\(s\)/);
+    it("rejects an http(s) URL — images must be uploaded, not linked", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: '["https://example.com/front.jpg"]' })}`);
+        expect(rows[0].error).toMatch(/not a URL/);
     });
 
-    it("rejects a local path that escapes with ..", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["../secret.jpg"]' })}`);
-        expect(rows[0].error).toMatch(/relative name/);
+    it("rejects a non-http URL scheme too", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: '["ftp://example.com/x.jpg"]' })}`);
+        expect(rows[0].error).toMatch(/not a URL/);
     });
 
-    it("rejects a local file with no image extension", () => {
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: '["front.txt"]' })}`);
+    it("rejects a path that escapes with ..", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: '["../secret.jpg"]' })}`);
+        expect(rows[0].error).toMatch(/relative file name/);
+    });
+
+    it("rejects a file with no image extension", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: '["front.txt"]' })}`);
         expect(rows[0].error).toMatch(/\.jpg/);
     });
 
     it("enforces the per-row image cap", () => {
-        const many = JSON.stringify(Array.from({ length: 5 }, (_, i) => `https://example.com/${i}.jpg`));
-        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImageUrls: many })}`, 3);
+        const many = JSON.stringify(Array.from({ length: 5 }, (_, i) => `img-${i}.jpg`));
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: many })}`, 3);
         expect(rows[0].error).toMatch(/limit is 3/);
     });
 
