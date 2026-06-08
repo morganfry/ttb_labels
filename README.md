@@ -76,6 +76,14 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 
 The deterministic core is unit-tested with Vitest (`npm test`): the matcher / judge (`lib/matching.test.ts` — the confidence gate, the three matchers, the per-product rulesets, the strict warning check, the spirits ABV floor) and the intake layer (CSV tokenizer + validation, image resolution, the ZIP decompressed budgets). An end-to-end test (`lib/e2e.test.ts`) runs a batch through the *real* pipeline with the model calls replaced by fixtures, so the **judgment** is verified without depending on a live model. What's intentionally *not* unit-tested is model accuracy itself (non-deterministic — validated by hand against real labels) and the persistence / HTTP boundary (exercised against the live deploy). The same suite is the CI gate (`.github/workflows/ci.yml`): typecheck · test · build must pass before a deploy ships.
 
+### Sample data
+
+Real fixtures for a hands-on run live in the repo, 39 sample applications mirrored across each intake path:
+
+- **`test-form-pdfs/`** — 39 combined-application PDFs (filled COLA Part I form + affixed label artwork), one application each, for the **Upload** tab. The same 39 are also bundled as `ttb_forms_with_new_high_res_labels_39_pdfs.zip` to exercise the drop-a-ZIP flow. (See its `README.md` for generating more.)
+- **`test-form-images/`** — the page-1 JPG render of each of those applications, for the image-intake path (an image is treated as an un-sliceable single-page application). Also bundled as `ttb_forms_first_pages_39_jpg.zip`.
+- **`test-csvs/`** — the **CSV bulk** path: `alcohol_label_text_bulk_template_jpg_filenames.csv` (39 rows of Part I columns + a `labelImages` JSON array), the label images it references in `img/`, and `label_images_jpg_matching_spreadsheet.zip` (those same images as one ZIP). Upload the CSV plus the images (loose or zipped) together.
+
 ---
 
 ## Assumptions
