@@ -115,8 +115,7 @@ async function callModel(input: ExtractionInput | ExtractionInput[], systemPromp
     // Each source becomes its own content block; a leading note tells the model
     // that several sources describe one subject so it merges rather than picks.
     const sourceBlocks = inputs.map(buildSourceBlock);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lead: any[] = inputs.length > 1
+    const lead: Anthropic.TextBlockParam[] = inputs.length > 1
         ? [{ type: "text", text: `The following ${inputs.length} images are different views (e.g. front, back, neck) of a SINGLE label. Transcribe each field once, drawing from whichever view shows it.` }]
         : [];
     let message: Anthropic.Message;
@@ -154,8 +153,9 @@ async function callModel(input: ExtractionInput | ExtractionInput[], systemPromp
         .join("\n");
 }
 
-/** Images and PDFs require different content-block shapes. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/** Images and PDFs require different content-block shapes. The installed SDK
+ *  doesn't export a param union that includes the PDF "document" block, so this
+ *  stays loosely typed; the shape is validated by the API at call time. */
 function buildSourceBlock(input: ExtractionInput): any {
     if (input.mediaType === "application/pdf") {
         return { type: "document", source: { type: "base64", media_type: "application/pdf", data: input.base64 } };
