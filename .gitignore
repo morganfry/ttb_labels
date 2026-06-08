@@ -10,6 +10,9 @@ context/
 # Local sample inputs are versioned via Git LFS (see .gitattributes). Lone
 # exception: the 163 MB source PDF archive stays out of git entirely.
 test-form-pdfs/*.zip
+# Unzipped CSV label images — the .zip is the canonical artifact (LFS); these
+# loose files are local-only, kept out so a stray `git add -A` can't commit them.
+test-csvs/img/
 
 # Local self-signed dev TLS cert (for --experimental-https on machines where
 # mkcert's CA install is blocked) — never commit the private key.
