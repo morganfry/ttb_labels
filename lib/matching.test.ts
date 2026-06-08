@@ -56,6 +56,11 @@ describe("similarity", () => {
 
 describe("numeric parsers", () => {
     it("parses ABV", () => { expect(parsePercent("45% Alc./Vol. (90 Proof)")).toBe(45); expect(parsePercent("13.5% ABV")).toBe(13.5); });
+    it("prefers the alcohol-tied percentage over a leading non-ABV one", () => {
+        expect(parsePercent("100% Blue Weber Agave 40% Alc./Vol.")).toBe(40);
+        expect(parsePercent("Alc. 40% by Vol")).toBe(40);
+        expect(parsePercent("40%")).toBe(40); // bare percentage still parses (fallback)
+    });
     it("normalizes volume to mL", () => { expect(parseVolumeMl("750 mL")).toBe(750); expect(parseVolumeMl("0.75 L")).toBe(750); expect(parseVolumeMl("75 cL")).toBe(750); });
 });
 

@@ -2,11 +2,22 @@
  *  normalization, independent of the matchers. */
 
 /**
- * Extract a percentage from an alcohol statement.
+ * Extract the alcohol-by-volume percentage from an alcohol statement.
+ *
+ * A percentage tied to the alcohol context (e.g. "40% Alc./Vol.", "13.5% ABV",
+ * "Alc. 40% by Vol") is preferred over a bare leading figure, so a non-ABV
+ * percentage that happens to come first — "100% Agave 40% Alc./Vol." — doesn't
+ * win. Falls back to the first percentage when there is no alcohol cue.
+ *
  * @returns the numeric percent, or null if none is present.
  * @example parsePercent("45% Alc./Vol. (90 Proof)") // 45
+ * @example parsePercent("100% Blue Weber Agave 40% Alc./Vol.") // 40
  */
 export function parsePercent(s: string): number | null {
+    const tied =
+        s.match(/(\d+(?:\.\d+)?)\s*%\s*(?:alc|abv|alcohol|by\s*vol|vol)/i)      // "40% Alc./Vol."
+        ?? s.match(/(?:alc|abv|alcohol)[^%\d]{0,15}(\d+(?:\.\d+)?)\s*%/i);       // "Alc. 40%"
+    if (tied) return parseFloat(tied[1]);
     const m = s.match(/(\d+(?:\.\d+)?)\s*%/);
     return m ? parseFloat(m[1]) : null;
 }

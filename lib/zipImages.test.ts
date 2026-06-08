@@ -88,6 +88,13 @@ describe("indexImageSources (loose files and ZIPs in one index)", () => {
         ]);
         expect(zipHasImage(idx, "a.png")).toBe(false);
     });
+
+    it("never indexes a traversal-style entry path (defense in depth)", () => {
+        const idx = indexImageSources([{ zip: zip({ "../secret.png": "X", "ok.png": "Y" }) }]);
+        expect(zipHasImage(idx, "secret.png")).toBe(false);     // not reachable by basename
+        expect(zipHasImage(idx, "../secret.png")).toBe(false);  // nor by its path
+        expect(zipHasImage(idx, "ok.png")).toBe(true);          // normal entry unaffected
+    });
 });
 
 describe("indexImageSources decompressed budget (zip-bomb guard)", () => {

@@ -87,6 +87,10 @@ export function indexImageSources(sources: readonly RawImageSource[], budget?: Z
         if (ZIP_JUNK_RE.test(rawPath)) return; // archive cruft
         const path = normalizeZipPath(rawPath);
         if (path === "") return;
+        // Never index a traversal-style path. Resolution is in-memory only (no fs
+        // access), so this can't be exploited — but it keeps the index free of
+        // ".." keys rather than relying on csvParse's ref validation alone.
+        if (path.split("/").includes("..")) return;
         pathCount.set(path, (pathCount.get(path) ?? 0) + 1);
         byPath.set(path, data);
         const base = path.split("/").pop()!;
