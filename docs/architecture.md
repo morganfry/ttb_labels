@@ -69,7 +69,6 @@ flowchart LR
         pdfui["VerificationApp"]
         csvui["CsvVerify"]
         search["SearchView (Review History)"]
-        detect["detectClient<br/>(advisory pre-flight)"]
     end
 
     subgraph api["API routes — Node runtime, NDJSON streaming"]
@@ -94,7 +93,6 @@ flowchart LR
         schema["schema<br/>FIELD_RULES · rulesets · warning text"]
         config["config<br/>models · caps · concurrency"]
         persistence["persistence (barrel)<br/>saveResult · search · getResult"]
-        detrules["detectionRules (pure)"]
     end
 
     db[("PostgreSQL")]
@@ -104,9 +102,7 @@ flowchart LR
     pdfui -->|"multipart PDFs / images"| rverify
     csvui -->|"CSV + optional images"| rcsv
     search --> rsearch
-    pdfui -. advisory, PDF only .-> detect
     pdfui -. expand ZIP .-> zipdocs
-    detect --> detrules
 
     rverify --> orch
     rverify -->|"infer media type"| mediatype
@@ -137,9 +133,6 @@ Reading aids:
 - **`extraction` is label/form-agnostic** — one shared model integration; the
   model id is a per-call argument (label defaults to a faster tier, form to the
   general one; see `config.ts`).
-- **`detectClient` is advisory only** and runs in the browser; it never gates
-  server-side processing. It is PDF-structure-based, so image uploads skip it and
-  queue straight to ready.
 - **An image is an un-sliceable PDF.** `mediaType` (the single source of file-type
   knowledge, shared by the route, `zipDocs`, `csvParse`, and `imageFetch`) tells
   `processOne` whether to slice the PDF or feed the one image to both parsers. No
@@ -151,10 +144,10 @@ Reading aids:
 
 ## 3. Verification sequence (one PDF or image application)
 
-The runtime view: detect → slice → transcribe (two models,
-concurrently) → judge → persist → stream, with results flowing back per item
-rather than after the whole batch (the per-label latency requirement). Detect and
-slice are PDF-only steps; an image skips both and is read whole by both parsers.
+The runtime view: slice → transcribe (two models, concurrently) → judge →
+persist → stream, with results flowing back per item rather than after the whole
+batch (the per-label latency requirement). Slice is a PDF-only step; an image
+skips it and is read whole by both parsers.
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +161,6 @@ sequenceDiagram
     participant DB as Postgres
 
     Agent->>UI: drop combined PDF(s) or image(s)
-    UI->>UI: detectClient — advisory Form/Label chips (PDF only)
     Agent->>API: process queued applications (multipart)
     API->>API: migrate(), infer media type per file, build the work list
 

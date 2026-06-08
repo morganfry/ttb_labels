@@ -11,7 +11,6 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 - **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or uploaded image files — loose or in a ZIP). Both feed the identical matching, persistence, and results pipeline.
 - **Upload** — drag-and-drop or browse, single file or bulk. Accepts combined application PDFs (a filled COLA form with the label artwork affixed) **or a flat image (JPG/PNG/WebP/GIF)** of one — a PDF is sliced (page 1 = form, artwork pages = label), while an image (which can't be sliced) is read whole by both parsers. Also accepts a ZIP of such files — expanded in the browser, each file joins the same queue and pipeline (with a real per-entry/total decompressed budget).
 - **CSV bulk** — one application per row, with the COLA Part I fields as columns and a final `labelImageUrls` column holding a JSON array of image references. Each reference is either an http(s) URL or the name of a file inside an optional ZIP of label images uploaded alongside the CSV — so artwork on disk can be verified without hosting it. The app reads and transcribes those images, then verifies them against the row. The CSV tab shows the expected format, a worked example, a live cross-check of local files against the ZIP, and a downloadable template.
-- **Pre-flight detection** — on upload, each PDF is inspected in the browser to confirm it contains both a filled Part I and an affixed label. Documents missing a piece, or read with low confidence, are flagged for review with a plain-language reason and an explicit "Process anyway" override. This is advisory guidance for the agent, not a gate (see Limitations).
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
 - **Verification** — deterministic matching checks each field with the logic appropriate to it: tolerant matching for names, numeric tolerance for alcohol content and net contents, strict exact matching for the government warning.
 - **Streaming results** — applications process concurrently and results stream back per-item, filling a color-coded table (green / amber / red per field) as each finishes. A summary strip tallies passed / needs-review / failed.
@@ -28,24 +27,18 @@ The app has two screens, linked by the top navigation: **Verify** (review new ap
 
 ### Verifying applications
 
-1. **Upload.** On the Verify screen, drag application PDFs onto the upload area, or click it to browse. You can add one file or many at once. Each PDF should be a complete application — the COLA form with the label affixed.
+1. **Upload.** On the Verify screen, drag application PDFs onto the upload area, or click it to browse. You can add one file or many at once. Each PDF should be a complete application — the COLA form with the label affixed. Each file appears in the queue marked *Ready*; remove any with the **×** on its row, or **Clear all** to start over.
 
-2. **Check the pre-flight flags.** Each file appears in a list with two small chips, **Form** and **Label**, showing what was found inside it:
-    - **Green** — found clearly. The row is marked *Ready*.
-    - **Amber** — found, but the app isn't fully sure (e.g. a scanned form with no text layer).
-    - A row marked **Needs review** shows the reason underneath and a **Process anyway** button. Use it when you've looked and the document is fine; the app won't process a flagged document until you do.
-    - Remove any file with the **×** on its row, or **Clear all** to start over.
+2. **Process.** Once at least one file is queued, the large **Process** button shows how many it will run. Click it. A progress bar shows results arriving ("Processing… 3 of 12 done") — you don't have to wait for the whole batch before reading the early ones.
 
-3. **Process.** Once at least one file is *Ready*, the large **Process** button is enabled and shows how many it will run. Click it. A progress bar shows results arriving ("Processing… 3 of 12 done") — you don't have to wait for the whole batch before reading the early ones.
-
-4. **Read the results table.** Each application becomes a row. Every field has a colored verdict:
+3. **Read the results table.** Each application becomes a row. Every field has a colored verdict:
     - **Green — Pass**: the label matches the application (or meets the requirement).
     - **Amber — Review / Unreadable**: close but not exact, or couldn't be read confidently. Worth a human look.
     - **Red — Fail**: a genuine mismatch or a missing required field.
     - **Gray — N/A**: not applicable to this product type (e.g. wine appellation on a spirit).
       The **Overall** column summarizes the row, and the strip above the table tallies how many passed, need review, or failed.
 
-5. **See why.** Click any row to expand a per-field breakdown showing the value the app read from the label and, for anything flagged, the specific reason (e.g. *"GOVERNMENT WARNING:" must be in all capital letters*). The verdict is guidance — you make the final call.
+4. **See why.** Click any row to expand a per-field breakdown showing the value the app read from the label and, for anything flagged, the specific reason (e.g. *"GOVERNMENT WARNING:" must be in all capital letters*). The verdict is guidance — you make the final call.
 
 ### Bulk verification by CSV
 
@@ -82,35 +75,32 @@ On the **Review History** screen, the most recent reviews load automatically. Na
 Upload (combined PDF or image)
    │
    ▼
-[1] Detect regions      structural check: filled Part I? affixed label?
-   │                    (cheap, no model call; flags ambiguous docs)
-   │                    (PDFs only — images skip [1] and [2])
-   ▼
-[2] Slice                form Part I → page 1 only (model never sees the
+[1] Slice                form Part I → page 1 only (model never sees the
    │                     instruction / certification / revision pages);
    │                     label → only the artwork (image-bearing) pages
+   │                     (PDFs only — a flat image can't be sliced)
    ▼
-[3] Extract (×2)         one shared model integration, two prompts, run
+[2] Extract (×2)         one shared model integration, two prompts, run
    │                     concurrently, each on its own model tier:
    │   ├─ form parser   → Part I values  ("what it should be")
    │   └─ label parser  → label fields   ("what's printed")
    ▼
-[4] Match               deterministic matchers compare the two sides;
+[3] Match               deterministic matchers compare the two sides;
    │                    confidence-gated so a misread never becomes a
    ▼                    false fail
-[5] Persist             verdict + field results saved (Postgres);
+[4] Persist             verdict + field results saved (Postgres);
    │                    uploaded files are NOT stored
    ▼
-[6] Stream              result returned per-item; table fills row by row
+[5] Stream              result returned per-item; table fills row by row
 ```
 
-An **image upload** takes the same path with steps [1]–[2] skipped: a flat image can't be detected or sliced, so the one image — which must show the whole application — is fed to both parsers at step [3] verbatim. From matching on, it is identical to the PDF path.
+An **image upload** takes the same path with step [1] skipped: a flat image can't be sliced, so the one image — which must show the whole application — is fed to both parsers at step [2] verbatim. From matching on, it is identical to the PDF path.
 
-The **CSV path** is the same pipeline with the front end of it swapped: steps [1]–[3] (detect / slice / form-extract) are replaced by reading the application (Part I) values straight from CSV columns and fetching the label images from their URLs. From step [3]'s label extraction onward — transcription, confidence-gated matching, persistence, streaming — both paths are identical and share the same worker pool. The "model transcribes; code judges" invariant is preserved: only the *form* extraction is replaced by explicit columns; the label is still model-read from the fetched images (one model call per row, with every image for that row sent together).
+The **CSV path** is the same pipeline with the front end of it swapped: steps [1]–[2] (slice / form-extract) are replaced by reading the application (Part I) values straight from CSV columns and resolving the label images from their references. From step [2]'s label extraction onward — transcription, confidence-gated matching, persistence, streaming — both paths are identical and share the same worker pool. The "model transcribes; code judges" invariant is preserved: only the *form* extraction is replaced by explicit columns; the label is still model-read from the resolved images (one model call per row, with every image for that row sent together).
 
 ### Layers
 
-**Frontend (Next.js App Router, React, Tailwind).** Two screens — `/` (Verify) and `/search` (Review History) — composed from small components. Shared display constants and the `OverallBadge` / `FieldCards` components are imported by both screens so verdicts look identical everywhere. Client-side region detection runs before upload; processing is driven by a streaming `fetch` to the API.
+**Frontend (Next.js App Router, React, Tailwind).** Two screens — `/` (Verify) and `/search` (Review History) — composed from small components. Shared display constants and the `OverallBadge` / `FieldCards` components are imported by both screens so verdicts look identical everywhere. Processing is driven by a streaming `fetch` to the API.
 
 **API routes (Node runtime).**
 - `POST /api/verify` — accepts the uploaded files (PDFs and/or images) as multipart form data, infers each one's media type from its name, runs the batch, and streams results back as newline-delimited JSON (NDJSON), one line per finished application.
@@ -123,7 +113,6 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 - `prompts.ts` — the label and form extraction prompts.
 - `mediaType.ts` — pure: classifies a file name (PDF / image / ZIP) and maps an image to its media type; the single source both intakes use to decide PDF-vs-image handling.
 - `pdf-first-page.ts` — slices the form to page 1 (hard guard against extra pages) and the label to its artwork (image-bearing) pages, to cut vision-input tokens. PDFs only — a flat image isn't sliced; the one image goes to both parsers.
-- `detection-rules.ts` / `detect-client.ts` — structural region detection (pure heuristic + browser adapter). Advisory pre-flight only; see Detection under Limitations.
 - `extraction.ts` — one shared vision-model integration; model is a per-call parameter. Accepts one image or several to transcribe together as a single subject.
 - `parsers.ts` — the label and form parsers (prompt + validator pairs); `parseLabel` takes one image or an array (the CSV path's multi-view labels).
 - `csvParse.ts` — pure CSV tokenizer + per-row validation → application data + image references (URLs or ZIP file names; reused on the client for the pre-submit preview).
@@ -163,7 +152,7 @@ The **CSV path** is the same pipeline with the front end of it swapped: steps [1
 - **Next.js (TypeScript)** — full-stack framework; App Router; API routes keep the model key server-side.
 - **React + Tailwind CSS** — UI.
 - **Anthropic vision model** — extraction (one integration for both parsers).
-- **pdf-lib** — page slicing and structural region detection.
+- **pdf-lib** — page slicing (form Part I / label artwork pages).
 - **PostgreSQL via `pg`** — persistence and search; runs against any Postgres (managed, on-prem, or local Docker).
 - **Docker** — containerized deploy to any host.
 - **fastest-levenshtein** — string distance for the tolerant matcher.
@@ -273,7 +262,7 @@ secret `RENDER_DEPLOY_HOOK_URL`.
 - For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image references resolve to that application's label artwork: either http(s) URLs reachable from the server, or files present among the uploaded images (loose files and/or a ZIP).
 - The canonical government-warning text used for the strict check is the standard 27 CFR 16.21 wording. **Verify this string against the current regulation before any real use** — the strict matcher is only as correct as that constant.
 - Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default is used, but in production this should gate to human confirmation, since it controls the whole comparison profile.
-- The reviewing agent makes the final call. Every "review" outcome and detection flag is an invitation for human judgment, not an automated rejection.
+- The reviewing agent makes the final call. Every "review" outcome is an invitation for human judgment, not an automated rejection.
 
 ---
 
@@ -283,13 +272,12 @@ secret `RENDER_DEPLOY_HOOK_URL`.
 - **Correlated misreads can produce a false pass.** On fields matched between the label and the form (brand, producer, appellation), both sides are read by the model. If it misreads the *same* text the *same* wrong way on both — and does so confidently — the two corrupted values match each other and the field passes, hiding a real discrepancy. The cause is the similarity of the inputs, not the use of one model; two different models can share the same blind spots. This is mitigated, not eliminated, by the confidence gate (an ambiguous read usually returns low confidence and routes to review), and it cannot affect the government warning, which is matched against a fixed constant rather than a second model read. Hardening options for production: extract high-stakes fields at two resolutions/crops and require agreement, cross-check derivable relationships (e.g. proof = ABV × 2), or always surface the extracted values to the agent on a pass, not only on a flag.
 - **Net-contents parsing is not exhaustive.** Common units (mL, cL, L, fl oz) are handled; compound US statements like "1 PINT 9 FL OZ" are not yet parsed and would flag for review.
 - **Tolerant fields apply field-aware normalization + a containment rule.** Before scoring, the producer name/address folds away a label-only "BOTTLED BY"-style prefix and maps full US state names to abbreviations ("…Charleston, South Carolina" ≡ "…, SC"), and the fanciful name drops a leading vintage year ("2023 Rosé" ≡ "Rosé"). In addition, when one name's words are fully contained in the other (≥2 shared words) it's treated as a confident match — so a label that drops a suffix ("VERONA HILLS" ≡ "Verona Hills Vineyards") or carries extra boilerplate ("ESTATE BOTTLED BY …") still matches. All of this affects only the *scored* text (displayed values stay verbatim). The trade-off is a small, rare false-pass surface — a company named after a state, two fanciful names differing only by a leading year, or a name that is a strict subset of an unrelated one — bounded by the confidence gate and human review; none of it can affect the government warning.
-- **Detection is heuristic and advisory (client-side only).** Region detection uses structural signals (template markers, embedded images), not full extraction, and runs in the browser to flag documents for the agent — it does not gate server-side processing. Correctness is enforced regardless by the confidence-gated matcher: a misdetected or low-quality document yields low-confidence reads that route to review, never a confident false pass. (A form flattened into a single image has no text layer and is treated as low-confidence rather than assumed valid.) Production hardening could add a server-side re-check and a dedicated text extractor for scans.
 - **Cloud model vs. network policy.** The prototype calls a hosted model API. In a restricted federal network this traffic may be blocked; production deployment would need the endpoint allow-listed or an in-network model. This is the single most likely thing to break a real deployment.
 - **Inference provider for a real (federal) deployment.** Beyond mere network reachability, the prototype's commercial cloud model endpoint would not satisfy federal authorization requirements as-is. A production system processing real COLA submissions would have to run inference on a **FedRAMP-authorized** service (e.g. a model offered within a FedRAMP / GovCloud boundary at the appropriate impact level) **or a self-hosted / in-boundary model** inside the system's accreditation boundary. Because the code keeps the model behind one swappable integration (`lib/extraction.ts`, model id as a per-call parameter) and judges deterministically in code, changing the inference backend is contained — but it is a prerequisite for any real use, not an optional hardening step.
 - **CSV image fetching is server-side and only lightly guarded.** When a row references images by URL, the server fetches arbitrary URLs. There is a best-effort SSRF guard (http(s) only; loopback, link-local, and RFC-1918 hosts rejected) and size/timeout caps, but it is not DNS-rebinding-proof. A production deployment should front it with an allow-list or an egress proxy. The ZIP option avoids outbound fetches entirely and is the safer choice in a locked-down network. Net-contents and ABV still come from the label image, not the CSV, so a CSV row can't assert compliance values directly.
 - **The CSV image ZIP is fully decompressed in memory.** Both the server (resolve) and the client (pre-flight cross-check) expand the whole archive, bounded only by a blunt compressed-size cap (`CSV_IMAGE_ZIP_MAX_BYTES`) — not a decompressed-size budget, so it is not hardened against a crafted "zip bomb." Production should stream-extract with a hard per-entry and total decompressed limit.
 - **Upload-tab ZIP expansion is in-browser and synchronous.** A dropped ZIP of PDFs and/or images is decompressed client-side (`lib/zipDocs.ts`) before the run; a very large archive briefly blocks the UI thread during extraction. Unlike the CSV image ZIP, it enforces a real decompressed budget (per-entry and total, checked from ZIP metadata before each entry is expanded), so it is hardened against a crafted "zip bomb." Only `.zip` is supported (not 7z/rar/tar/gz).
-- **Image intake assumes the whole application is in one image, and skips slicing and pre-flight.** A flat JPG/PNG can't be split into form/label regions, so the single image is sent to both parsers as-is — it must therefore show the filled Part I *and* the affixed label. There is no page-1 slice and no browser pre-flight detection (both are PDF-structure-based) for images; the prompt scope guards and the confidence-gated matcher remain the safeguards. Multi-page applications are better submitted as PDFs.
+- **Image intake assumes the whole application is in one image, and skips slicing.** A flat JPG/PNG can't be split into form/label regions, so the single image is sent to both parsers as-is — it must therefore show the filled Part I *and* the affixed label. There is no page-1 slice for images; the prompt scope guards and the confidence-gated matcher remain the safeguards. Multi-page applications are better submitted as PDFs.
 - **Long batches need a streaming-friendly proxy.** Processing runs in one streaming request. A long-running Node server has no function timeout, so large batches complete fine — but any reverse proxy in front must have response buffering disabled (the route sets `X-Accel-Buffering: no` for nginx) or results won't stream incrementally.
 - **No COLA integration.** By design. Results inform a potential future workflow; they are not written back to any system of record.
 

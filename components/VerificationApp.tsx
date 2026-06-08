@@ -6,7 +6,6 @@ import type { Item } from "@/lib/uiTypes";
 import { uid, isPdf, isImage, isZip, OVERALL_META } from "@/lib/uiTypes";
 import { config } from "@/lib/config";
 import { extractZipDocs } from "@/lib/zipDocs";
-import { detectOne } from "@/lib/detectClient";
 import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
 import { ResultsTable } from "./ResultsTable";
@@ -17,16 +16,14 @@ import { useRegisterProcessing } from "./ProcessingGuard";
 /**
  * The PDF tab's run state as one machine: the file queue plus whether a batch is
  * in flight. Modeling it as a reducer keeps the per-item transitions
- * (detecting → queued/review → processing → done) atomic and rules out
- * impossible combinations that scattered useState calls allow.
+ * (queued → processing → done) atomic and rules out impossible combinations that
+ * scattered useState calls allow.
  */
 type State = { items: Item[]; processing: boolean; processError: string | null; notice: string | null };
 type Action =
     | { type: "add"; items: Item[] }
     | { type: "notice"; message: string | null }
-    | { type: "detected"; id: string; detection: NonNullable<Item["detection"]>; status: string }
     | { type: "remove"; id: string }
-    | { type: "override"; id: string }
     | { type: "reset" }
     | { type: "runStart"; ids: string[] }
     | { type: "result"; id: string; ok: boolean; result: unknown; error: unknown; latencyMs?: number; timings?: Item["timings"] }
@@ -39,12 +36,8 @@ function reducer(s: State, a: Action): State {
             return { ...s, items: [...s.items, ...a.items] };
         case "notice":
             return { ...s, notice: a.message };
-        case "detected":
-            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, detection: a.detection, status: a.status } : x) };
         case "remove":
             return { ...s, items: s.items.filter((x) => x.id !== a.id) };
-        case "override":
-            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, status: "queued" } : x) };
         case "reset":
             return { items: [], processing: false, processError: null, notice: null };
         case "runStart": {
@@ -66,24 +59,17 @@ export default function VerificationApp() {
     const { items, processing, processError, notice } = state;
     useRegisterProcessing(processing); // warn on navigation while a run is active
 
-    // Add applications (PDFs and/or images) as work items. PDFs get a browser
-    // pre-flight (region detection); a flat image can't be sliced or inspected
-    // that way, so it goes straight to "queued". `fromZip` tags those that came
-    // out of an archive (display only).
+    // Add applications (PDFs and/or images) as work items, queued for the run.
+    // `fromZip` tags those that came out of an archive (display only). The server
+    // verifies every queued item directly; the confidence-gated matcher is the
+    // guarantee, so there is no client pre-flight gate.
     const addDocs = useCallback((files: File[], fromZip: string | null) => {
-        const incoming: Item[] = files.map((f) => {
-            const kind: Item["kind"] = isPdf(f.name) ? "pdf" : "image";
-            return kind === "pdf"
-                ? { id: uid(), name: f.name, kind, fromZip, status: "detecting", result: null, file: f, detection: null }
-                : { id: uid(), name: f.name, kind, fromZip, status: "queued", result: null, file: f };
-        });
+        const incoming: Item[] = files.map((f) => ({
+            id: uid(), name: f.name, kind: isPdf(f.name) ? "pdf" : "image", fromZip,
+            status: "queued", result: null, file: f,
+        }));
         if (!incoming.length) return;
         dispatch({ type: "add", items: incoming });
-        incoming.filter((it) => it.kind === "pdf").forEach((it) => {
-            detectOne(it.file!).then((detection) => {
-                dispatch({ type: "detected", id: it.id, detection, status: detection.status === "ready" ? "queued" : "review" });
-            });
-        });
     }, []);
 
     // Expand a dropped ZIP in the browser; its PDFs/images join the same pipeline.
@@ -129,7 +115,6 @@ export default function VerificationApp() {
     }, [addDocs, ingestZip]);
 
     const removeItem = (id: string) => dispatch({ type: "remove", id });
-    const overrideToReady = (id: string) => dispatch({ type: "override", id });
     const reset = () => dispatch({ type: "reset" });
 
     const handleStreamLine = (evt: any) => {
@@ -183,8 +168,6 @@ export default function VerificationApp() {
 
     const docItems = items.filter((it) => it.kind === "pdf" || it.kind === "image");
     const queuedCount = docItems.filter((it) => it.status === "queued").length;
-    const reviewCount = docItems.filter((it) => it.status === "review").length;
-    const detectingCount = docItems.filter((it) => it.status === "detecting").length;
     const doneCount = docItems.filter((it) => it.status === "done").length;
     const hasResults = doneCount > 0;
     const allDone = docItems.length > 0 && doneCount === docItems.length;
@@ -210,7 +193,7 @@ export default function VerificationApp() {
 
                 {items.length > 0 && (
                     <FileQueue items={items} pdfCount={docItems.length} disabled={processing}
-                               onRemove={removeItem} onOverride={overrideToReady} onClear={reset} />
+                               onRemove={removeItem} onClear={reset} />
                 )}
 
                 {processError && (
@@ -230,19 +213,11 @@ export default function VerificationApp() {
                                 </div>
                             </div>
                         ) : (
-                            <>
-                                <button onClick={runVerification} disabled={queuedCount === 0 || detectingCount > 0}
-                                        className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-blue-600 px-6 py-5 text-xl font-bold text-white shadow-md shadow-blue-600/25 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none">
-                                    <CheckCircle2 size={24} />
-                                    {detectingCount > 0 ? "Checking documents…" : hasResults ? "Process remaining" : `Process ${queuedCount} ${queuedCount === 1 ? "application" : "applications"}`}
-                                </button>
-                                {reviewCount > 0 && (
-                                    <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800">
-                                        <AlertTriangle size={16} className="text-amber-600" />
-                                        {reviewCount} {reviewCount === 1 ? "document needs" : "documents need"} review before processing — check the flagged rows above.
-                                    </div>
-                                )}
-                            </>
+                            <button onClick={runVerification} disabled={queuedCount === 0}
+                                    className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-blue-600 px-6 py-5 text-xl font-bold text-white shadow-md shadow-blue-600/25 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none">
+                                <CheckCircle2 size={24} />
+                                {hasResults ? "Process remaining" : `Process ${queuedCount} ${queuedCount === 1 ? "application" : "applications"}`}
+                            </button>
                         )}
                     </div>
                 )}

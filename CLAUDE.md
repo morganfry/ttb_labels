@@ -32,11 +32,10 @@ README.md; for file locations see the architecture section there.
   artwork pages = label); an image type → NO slicing, the one image is fed to
   BOTH parsers verbatim (it shows the whole application). The extraction layer
   already speaks images (buildSourceBlock), so don't add an image-only route or
-  parser — just set the media type. Images also skip the client pre-flight
-  detection (it's PDF-structure-based); they queue straight to ready.
+  parser — just set the media type.
 - **A ZIP on the upload tab is transport, not a third path.** A dropped .zip is
   expanded CLIENT-SIDE (zipDocs.ts) into individual PDF/image File objects that
-  go through the exact same detect → /api/verify → matcher → persist flow as a
+  go through the exact same /api/verify → matcher → persist flow as a
   directly-uploaded file (VerificationApp.addDocs). Don't add server-side ZIP
   handling or a parallel verify route. Unlike the CSV image ZIP, extraction
   enforces a REAL decompressed budget via fflate's pre-decompress filter
@@ -186,9 +185,6 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
   names of uploaded image files — loose or in an optional ZIP). The app reads those images, then
   verifies against the row. The tab shows the format, an
   example, and a downloadable template.
-- Pre-flight detection — each PDF is checked in the browser for a filled Part I
-  and an affixed label; ambiguous documents are flagged for review with an
-  explicit "Process anyway" override. Advisory only — not a server-side gate.
 - Field extraction — a vision model transcribes label and form fields with a
   per-field confidence rating.
 - Verification — deterministic matching: tolerant for names, numeric tolerance
@@ -202,10 +198,9 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ## Architecture
 
-Request flow (one PDF application): (advisory region detection runs in the
-browser pre-upload) → slice form to page 1 and label to its artwork pages →
-extract label + form concurrently (two prompts, one shared integration, per-side
-model tiers) → deterministic, confidence-gated matching → persist (text +
+Request flow (one PDF application): slice form to page 1 and label to its artwork
+pages → extract label + form concurrently (two prompts, one shared integration,
+per-side model tiers) → deterministic, confidence-gated matching → persist (text +
 verdicts only) → stream result.
 CSV path: same pipeline with the front swapped — application data from columns,
 label images fetched from URLs and transcribed; matching onward is identical
@@ -218,9 +213,9 @@ Layers:
 - API routes (Node runtime) — `POST /api/verify` and `POST /api/verify-csv`
   (both stream NDJSON), `GET /api/search`, `GET /api/results/[id]`.
 - Core library (`lib/`) — framework-independent and unit-testable: schema +
-  rule config, prompts, page slicer, region detection, shared extraction,
-  parsers, matchers + dispatcher, batch orchestration (runPool + PDF and CSV
-  per-item pipelines), CSV parse + image fetch, persistence (pg).
+  rule config, prompts, page slicer, shared extraction, parsers, matchers +
+  dispatcher, batch orchestration (runPool + PDF and CSV per-item pipelines),
+  CSV parse + image fetch, persistence (pg).
 
 Key decisions: one vision model rather than OCR-then-parse; the model
 transcribes while deterministic code judges; three matchers routed by config;
@@ -321,12 +316,6 @@ sets `X-Accel-Buffering: no` for nginx).
   (proof = ABV × 2), or always surfacing values on a pass.
 - Net-contents parsing handles mL/cL/L/fl oz; compound US statements
   ("1 PINT 9 FL OZ") flag for review.
-- Detection is heuristic (template markers + embedded images), not full
-  extraction; a flattened-image form is treated as low-confidence. It runs
-  CLIENT-SIDE only and is advisory — not a server-side gate. Correctness is
-  enforced downstream by the confidence-gated matcher, so a misdetect can't
-  become a confident false pass. (Server re-validation was intentionally
-  dropped; the matcher is the real guarantee.)
 - The model API is a cloud call; in a restricted network it may need
   allow-listing or an in-network model.
 - CSV image fetching is server-side with only a best-effort SSRF guard (http(s)

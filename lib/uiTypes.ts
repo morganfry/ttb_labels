@@ -2,15 +2,9 @@ import type { ComponentType } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, Eye } from "lucide-react";
 import type { ItemTimings } from "./orchestration";
 
-type Detection = {
-    hasForm: boolean; formConfidence: "high" | "low";
-    hasLabel: boolean; labelConfidence: "high" | "low";
-    status: "ready" | "review"; notes: string[];
-};
-
 export type Item = {
     id: string; name: string; kind: "pdf" | "image" | "csv"; fromZip: string | null;
-    status: string; result: any; error?: any; file?: File; detection?: Detection | null;
+    status: string; result: any; error?: any; file?: File;
     /** End-to-end processing time and per-stage breakdown, from the stream. */
     latencyMs?: number; timings?: ItemTimings;
 };
