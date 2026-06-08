@@ -30,6 +30,14 @@ export const config = {
     concurrency: intFromEnv("BATCH_CONCURRENCY", 6),
     pageSize: 25,
     temperature: 0,
+    /* Upload guards (memory/CPU-exhaustion DoS): the request body is rejected by
+     * Content-Length before it's buffered; per-file, item-count, and CSV row caps
+     * bound the rest. Large legit batches should be split rather than raised. */
+    uploadMaxBytes: intFromEnv("UPLOAD_MAX_BYTES", 256 * 1024 * 1024),
+    verifyMaxFileBytes: intFromEnv("VERIFY_MAX_FILE_BYTES", 50 * 1024 * 1024),
+    verifyMaxItems: intFromEnv("VERIFY_MAX_ITEMS", 500),
+    csvMaxBytes: intFromEnv("CSV_MAX_BYTES", 16 * 1024 * 1024),
+    csvMaxRows: intFromEnv("CSV_MAX_ROWS", 5000),
     /* Per-label latency target (ms). The compliance team's hard bar from the
      * discovery interviews ("if we can't get results back in about 5 seconds,
      * nobody's going to use it"). Purely a display benchmark — it colors the

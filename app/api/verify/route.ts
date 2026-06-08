@@ -11,6 +11,7 @@
 import { processBatch, type WorkItem, type ItemOutcome } from "@/lib/orchestration";
 import { workItemMediaType } from "@/lib/mediaType";
 import { saveResult, migrate } from "@/lib/persistence";
+import { config } from "@/lib/config";
 
 export const runtime = "nodejs";   // needs Buffer / pdf-lib (not edge)
 export const maxDuration = 300;    // Vercel hint; ignored by a long-running server
@@ -19,6 +20,11 @@ interface Pair { id: string; name: string }
 
 export async function POST(req: Request): Promise<Response> {
     await migrate(); // idempotent; ensures tables exist on a fresh DB
+
+    // Reject an oversized request before buffering it into memory (DoS guard).
+    const len = Number(req.headers.get("content-length"));
+    if (Number.isFinite(len) && len > config.uploadMaxBytes)
+        return json({ error: `Request exceeds the ${config.uploadMaxBytes}-byte upload limit; upload fewer/smaller files.` }, 413);
 
     let form: FormData;
     try { form = await req.formData(); }
@@ -30,6 +36,8 @@ export async function POST(req: Request): Promise<Response> {
     } catch { return json({ error: "Missing or invalid `pairs` manifest." }, 400); }
     if (!Array.isArray(pairs) || pairs.length === 0)
         return json({ error: "Missing or invalid `pairs` manifest." }, 400);
+    if (pairs.length > config.verifyMaxItems)
+        return json({ error: `Too many applications in one request (max ${config.verifyMaxItems}); upload in smaller batches.` }, 413);
 
     // Combined-document model: the same uploaded file serves as both label and
     // form (two regions of one document); the parsers read different parts of it.
@@ -41,6 +49,8 @@ export async function POST(req: Request): Promise<Response> {
     for (const p of pairs) {
         const file = form.get(`file_${p.id}`);
         if (!(file instanceof File)) continue;
+        if (file.size > config.verifyMaxFileBytes)
+            return json({ error: `"${p.name}" exceeds the ${config.verifyMaxFileBytes}-byte per-file limit.` }, 413);
         const bytes = new Uint8Array(await file.arrayBuffer());
         items.push({
             id: p.id, name: p.name,

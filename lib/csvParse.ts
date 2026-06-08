@@ -74,9 +74,15 @@ export interface CsvParseResult {
  * each independently flagged valid or in error so one bad row never sinks the
  * batch.
  */
-export function parseCsv(text: string, maxImagesPerRow = Infinity): CsvParseResult {
+export function parseCsv(text: string, maxImagesPerRow = Infinity, maxRows = Infinity): CsvParseResult {
     const records = tokenizeCsv(text);
     if (records.length === 0) return { rows: [], headerError: "The CSV file is empty." };
+
+    // Bound the work: reject an over-row-cap file before building a work item per
+    // row (records[0] is the header, so data rows ≈ records.length - 1).
+    if (records.length - 1 > maxRows) {
+        return { rows: [], headerError: `The CSV has more than ${maxRows} rows; split it into smaller files.` };
+    }
 
     const header = records[0].map((h) => h.trim());
     const index: Record<string, number> = {};

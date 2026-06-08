@@ -122,6 +122,13 @@ describe("parseCsv", () => {
         expect(rows[0].error).toMatch(/limit is 3/);
     });
 
+    it("rejects a CSV over the row cap (DoS guard)", () => {
+        const body = Array.from({ length: 5 }, () => rowFor()).join("\n");
+        const { rows, headerError } = parseCsv(`${HEADER}\n${body}`, Infinity, 3);
+        expect(headerError).toMatch(/more than 3 rows/);
+        expect(rows).toHaveLength(0);
+    });
+
     it("leaves optional fields undefined when blank", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor({ fancifulName: "", grapeVarietals: "", wineAppellation: "" })}`);
         expect(rows[0].app?.fancifulName).toBeUndefined();

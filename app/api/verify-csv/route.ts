@@ -23,15 +23,22 @@ export const maxDuration = 300;
 export async function POST(req: Request): Promise<Response> {
     await migrate(); // idempotent; ensures tables exist on a fresh DB
 
+    // Reject an oversized request before buffering it into memory (DoS guard).
+    const len = Number(req.headers.get("content-length"));
+    if (Number.isFinite(len) && len > config.uploadMaxBytes)
+        return json({ error: `Request exceeds the ${config.uploadMaxBytes}-byte upload limit.` }, 413);
+
     let form: FormData;
     try { form = await req.formData(); }
     catch { return json({ error: "Expected multipart/form-data." }, 400); }
 
     const file = form.get("csv");
     if (!(file instanceof File)) return json({ error: "Missing `csv` file in upload." }, 400);
+    if (file.size > config.csvMaxBytes)
+        return json({ error: `CSV exceeds the ${config.csvMaxBytes}-byte limit; split it into smaller files.` }, 413);
 
     const text = await file.text();
-    const { rows, headerError } = parseCsv(text, config.csvMaxImagesPerRow);
+    const { rows, headerError } = parseCsv(text, config.csvMaxImagesPerRow, config.csvMaxRows);
     if (headerError) return json({ error: headerError }, 400);
     if (rows.length === 0) return json({ error: "The CSV has no data rows." }, 400);
 

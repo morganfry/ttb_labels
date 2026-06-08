@@ -155,9 +155,13 @@ export default function CsvVerify() {
     const preview = useMemo<Preview | null>(() => (rows ? buildPreview(rows, imageIndex) : null), [rows, imageIndex]);
 
     const acceptFile = useCallback(async (f: File) => {
+        if (f.size > config.csvMaxBytes) {
+            dispatch({ type: "csvRejected", file: f, message: `CSV is larger than the ${Math.round(config.csvMaxBytes / (1024 * 1024))} MB limit; split it into smaller files.` });
+            return;
+        }
         try {
             const text = await f.text();
-            const { rows, headerError } = parseCsv(text);
+            const { rows, headerError } = parseCsv(text, config.csvMaxImagesPerRow, config.csvMaxRows);
             if (headerError) dispatch({ type: "csvRejected", file: f, message: headerError });
             else dispatch({ type: "csvAccepted", file: f, rows });
         } catch {
