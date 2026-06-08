@@ -41,7 +41,7 @@ const COLUMN_NOTES: Record<string, string> = {
     applicantNameAddress: "Required. COLA item 8 — name + address.",
     grapeVarietals: "Optional, wine only. COLA item 10. If set, an appellation becomes required on the label.",
     wineAppellation: "Optional, wine only. COLA item 11.",
-    [IMAGE_REFS_COLUMN]: "Required. JSON array of image file names you upload alongside the CSV (loose files or in a ZIP), e.g. [\"front.jpg\",\"back.jpg\"]. Multiple entries are treated as views of one label.",
+    [IMAGE_REFS_COLUMN]: "Required. JSON array of uploaded-image file names, e.g. [\"front.jpg\",\"back.jpg\"]. A name may include a folder path (labels/24-1.jpg); a bare name resolves if unique. Multiple entries are treated as views of one label.",
 };
 
 type RowIssue = { rowNumber: number; error: string };
@@ -474,16 +474,9 @@ function CsvFormatGuide({ onDownload }: { onDownload: () => void }) {
                 </button>
             </div>
             <p className="mb-3 text-sm text-slate-500">
-                One application per row. The application (COLA Part I) fields are columns; the label artwork is referenced
-                by the final <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{IMAGE_REFS_COLUMN}</code> column,
-                a JSON array of image <strong>file names</strong> (e.g. <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{"[\"24-1-front.jpg\"]"}</code>).
-                The app reads those images, then verifies them against the row.
-            </p>
-            <p className="mb-3 text-sm text-slate-500">
-                Upload the images themselves — individually and/or in a ZIP — alongside the CSV; the app resolves each name
-                against what you uploaded (it never fetches images over the network). A name may include a folder path
-                (<code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">labels/24-1.jpg</code>); a bare file name
-                resolves if it is unique across everything you uploaded.
+                One application per row: the COLA Part I fields are columns, and the final{" "}
+                <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">{IMAGE_REFS_COLUMN}</code> column lists each
+                label image by file name. Upload those images (loose files and/or a ZIP) alongside the CSV.
             </p>
 
             <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50">
