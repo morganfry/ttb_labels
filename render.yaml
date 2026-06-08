@@ -19,12 +19,19 @@ services:
     region: virginia         # us-east, closest to FL; MUST match the database region
     branch: main
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /        # GET / returns 200 without touching the DB
+    healthCheckPath: /api/health  # unauthenticated 200; stays open when Basic Auth
+                                  # is enabled (gating / would 401 the probe).
     autoDeploy: false         # test-gated: CI POSTs a deploy hook only on green
                               # main, so a red build blocks the deploy. See ci.yml.
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false           # set once in the dashboard; never committed
+      # Password-protect the public URL: set BOTH in the dashboard to enable the
+      # Basic Auth gate (middleware.ts). Leave unset to keep the demo open.
+      # - key: BASIC_AUTH_USER
+      #   sync: false
+      # - key: BASIC_AUTH_PASSWORD
+      #   sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: ttb-labels-db

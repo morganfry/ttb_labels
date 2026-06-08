@@ -45,6 +45,8 @@ DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
 PGSSLMODE=require        # only if your Postgres requires TLS — VALIDATES the server cert (set PGSSLROOTCERT for a provider CA bundle)
 # PGSSLMODE=no-verify    # encrypt WITHOUT validating the cert — dev / self-signed only (MITM-able)
 # PGSSLROOTCERT=/path/ca.pem  # CA bundle to trust when validating
+# BASIC_AUTH_USER=reviewer        # set BOTH to password-protect the deployed app (Basic Auth); unset = open
+# BASIC_AUTH_PASSWORD=...
 MODEL=claude-...         # optional; general/default model (default in lib/config.ts)
 LABEL_MODEL=claude-...   # optional; model for the label read (default: a faster tier, claude-haiku-4-5)
 FORM_MODEL=claude-...    # optional; model for the form read (default: MODEL / claude-sonnet-4-6)
@@ -80,3 +82,14 @@ docker run -p 3000:3000 \
 The schema is created on the first request (idempotent migration). If a reverse proxy sits in front, disable response buffering so the verify route can stream results incrementally (the route sets `X-Accel-Buffering: no` for nginx).
 
 The live demo deploys to **Render**: a persistent Docker web service plus a managed Postgres, provisioned by [`render.yaml`](../render.yaml) (a Render Blueprint), and shipped **test-gated** by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — typecheck · test · build run on every push, and only a green `main` POSTs Render's deploy hook (Render's own auto-deploy is off, so a red build blocks the deploy). A persistent server is used over serverless because the app uploads whole PDFs (past serverless body caps) and streams NDJSON results. Both files are commented with the full setup.
+
+## Password-protecting the deployed app
+
+The app ships an optional HTTP Basic Auth gate (`middleware.ts`), **off by default** so local dev / tests / CI stay open. It activates only when both `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` are set, gating every route except the unauthenticated health check (`/api/health`) and static assets.
+
+To lock the public Render URL:
+
+1. **Point the health check at the open endpoint first.** Render dashboard → the service → Settings → Health Check Path → `/api/health` (or re-sync the Blueprint; `render.yaml` already specifies it). Do this *before* step 2 — gating `/` while the probe still hits `/` would 401 the health check and mark the service unhealthy.
+2. **Set the credentials.** Same service → Environment → add `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`. The next deploy activates the gate; visitors get the browser's Basic Auth prompt, and the app's own `fetch` calls inherit the credentials automatically (same origin).
+
+To turn it off again, delete those two env vars. (For SSO instead of a shared password, put Cloudflare Access in front of the service — no code change.)
