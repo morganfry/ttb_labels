@@ -59,7 +59,22 @@ export async function POST(req: Request): Promise<Response> {
 
     const stream = new ReadableStream({
         async start(controller) {
-            const write = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+            const write = (obj: unknown) => {
+                try { controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch { /* client gone */ }
+            };
+            // CHROME LARGE-UPLOAD FIX: Chrome aborted big uploads on this route
+            // with net::ERR_FAILED while Firefox and a curl probe (12 MB over
+            // HTTP/1.1 and HTTP/2) succeeded — so it wasn't a body-size limit but
+            // a byte-silent response: this route used to send nothing until the
+            // first per-item result, which for a large/slow PDF is many seconds
+            // out, and an idle response that long after the upload gets killed.
+            // Emitting an instant `start` byte plus a periodic `ping` keeps the
+            // stream flowing so it's never silent. Both events are ignored by the
+            // client (only result/progress/summary are acted on); this also brings
+            // the route to parity with the CSV route, which already opened with a
+            // byte and was not affected.
+            write({ type: "start", total: items.length });
+            const keepAlive = setInterval(() => write({ type: "ping" }), 10_000);
             try {
                 const summary = await processBatch(items, {
                     signal: abort.signal,
@@ -71,6 +86,7 @@ export async function POST(req: Request): Promise<Response> {
             } catch (e) {
                 write({ type: "error", message: e instanceof Error ? e.message : String(e) });
             } finally {
+                clearInterval(keepAlive);
                 controller.close();
             }
         },
