@@ -29,11 +29,14 @@ image affixed at the bottom. Options:
 
 ## Running a smoke test
 
-curl -F 'pairs=[{"id":"1","name":"clean-pass.pdf"}]' \
--F 'label_1=@test-form-pdfs/clean-pass.pdf' \
--F 'form_1=@test-form-pdfs/clean-pass.pdf' \
-http://localhost:3000/api/verify
+A combined PDF is one application: upload it once as `file_<id>`, where `<id>`
+matches the id in the `pairs` manifest (the route reads both the form and the
+label regions from that single file).
 
-           Expect an NDJSON stream; the `result` line's `overall` should match the
+curl -F 'pairs=[{"id":"1","name":"clean-pass.pdf"}]' \
+     -F 'file_1=@test-form-pdfs/clean-pass.pdf;type=application/pdf' \
+     http://localhost:3000/api/verify
+
+Expect an NDJSON stream; the `result` line's `overall` should match the
 scenario. Because the model is non-deterministic, treat mismatches as a prompt
 to inspect rather than a hard failure.

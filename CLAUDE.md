@@ -52,6 +52,16 @@ running it see docs/setup.md.
       → config.ts
     - Secrets (ANTHROPIC_API_KEY) → process.env only, never a committed file
       Don't consolidate these; the split is deliberate.
+- **Client components read operational caps via `useClientConfig()`, never
+  `import { config }`.** config.ts reads process.env, which only resolves at
+  runtime on the SERVER; imported into a client component those reads yield the
+  compiled DEFAULTS, so an env override (e.g. PDF_ZIP_MAX_BYTES, the CSV caps)
+  would silently not reach the browser. The server reads the client-relevant
+  subset once in the root layout (clientConfig() in lib/clientConfig.ts →
+  ClientConfigProvider) and the consumers (VerificationApp, CsvVerify,
+  ResultsTable, LatencySummary) pull it from that context. The layout is
+  `force-dynamic` so the seed is read per request, not baked at build. A new
+  client-side cap → add it to ClientConfig, don't import config.
 - **Tailwind color classes must be full literal strings** (see STATUS_META /
   OVERALL_META in uiTypes.ts). Never build class names by interpolation — the
   scanner purges dynamic ones and styles vanish in the production build.
