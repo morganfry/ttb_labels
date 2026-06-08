@@ -234,17 +234,11 @@ export default function CsvVerify() {
         if (!file) return;
         dispatch({ type: "runStart" });
 
+        const body = new FormData();
+        body.append("csv", file, file.name);
+        // ZIPs go as `images` (server expands them); loose files as `image`.
+        for (const f of imageFiles) body.append(isZip(f.name) ? "images" : "image", f, f.name);
         try {
-            const body = new FormData();
-            // CHROME LARGE-UPLOAD FIX (see VerificationApp): upload buffered bytes,
-            // not disk-backed File objects, so Chrome sends from memory instead of
-            // a lazy disk read that fails at byte 0 for large/cloud-backed files
-            // (RST_STREAM → net::ERR_FAILED). Firefox/curl buffer and so succeed.
-            const buffered = async (f: File) => new Blob([await f.arrayBuffer()], { type: f.type || "application/octet-stream" });
-            body.append("csv", await buffered(file), file.name);
-            // ZIPs go as `images` (server expands them); loose files as `image`.
-            for (const f of imageFiles) body.append(isZip(f.name) ? "images" : "image", await buffered(f), f.name);
-
             const res = await fetch("/api/verify-csv", { method: "POST", body });
             if (!res.ok || !res.body) {
                 let msg = "";
