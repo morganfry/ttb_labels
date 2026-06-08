@@ -14,7 +14,7 @@ import { saveResult, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 
 export const runtime = "nodejs";   // needs Buffer / pdf-lib (not edge)
-export const maxDuration = 300;    // serverless function cap (Vercel/Next); a long-running Render server ignores it
+export const maxDuration = 300;    // serverless function-duration cap; a long-running Render server ignores it
 
 interface Pair { id: string; name: string }
 
