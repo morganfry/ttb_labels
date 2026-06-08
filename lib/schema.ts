@@ -236,9 +236,10 @@ export const RULESET_BY_TYPE: Record<ProductType, ProductRuleset> = {
  * label may legitimately set the statement in all caps); the regulated all-caps
  * header is enforced separately as a visual signal, not from this text.
  *
- * IMPORTANT: verify this wording against the current regulation before any
- * real use — the strict check is only as correct as this constant, and a
- * subtly wrong value would fail every compliant label.
+ * Verified verbatim against the current 27 CFR 16.21 on 2026-06-07 (eCFR /
+ * Cornell LII). The strict check is only as correct as this constant — a subtly
+ * wrong value would fail every compliant label — so re-verify if the regulation
+ * changes (e.g. a future-added warning) before relying on it.
  */
 export const TTB_GOVERNMENT_WARNING =
     "GOVERNMENT WARNING: (1) According to the Surgeon General, women should " +

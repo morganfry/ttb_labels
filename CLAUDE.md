@@ -108,7 +108,8 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
   tier; verify it's accurate enough for the label read on real samples).
 - Confirm installed @anthropic-ai/sdk matches the messages.create shape in
   extraction.ts, and pg matches the Pool/query shape in db.ts.
-- TTB_GOVERNMENT_WARNING (schema.ts) must match current 27 CFR 16.21 — the
+- TTB_GOVERNMENT_WARNING (schema.ts) verified verbatim against current 27 CFR
+  16.21 on 2026-06-07 (eCFR / Cornell LII); re-verify if the reg changes — the
   strict check is only as correct as this constant.
 
 ## Conventions when extending
