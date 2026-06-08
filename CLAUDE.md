@@ -2,7 +2,8 @@
 
 AI-assisted TTB alcohol label verification (Next.js + TypeScript). This file
 captures what isn't obvious from reading the code. For the full picture see
-README.md; for file locations see the architecture section there.
+README.md; for file locations and diagrams see docs/architecture.md; for
+running it see docs/setup.md.
 
 ## Commands
 - Run locally: `docker compose up --build`  (app :3000, Postgres :5432)
