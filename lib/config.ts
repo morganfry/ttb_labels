@@ -23,8 +23,10 @@ export const config = {
     labelModel: process.env.LABEL_MODEL ?? "claude-haiku-4-5",
     formModel: process.env.FORM_MODEL ?? MODEL,
     maxTokens: 8192,
+    /** Transport retries for the model call, passed to the Anthropic SDK (it
+     *  retries 429/5xx/connection with retry-after-aware backoff). The single
+     *  retry layer — don't add a second loop around messages.create. */
     maxRetries: 2,
-    retryBaseMs: 500,
     concurrency: intFromEnv("BATCH_CONCURRENCY", 6),
     pageSize: 25,
     temperature: 0,

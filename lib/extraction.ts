@@ -8,8 +8,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config";
 
 /* API key is read from the environment, never passed by callers and never
- * placed in a committed config file — it is a secret. */
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+ * placed in a committed config file — it is a secret. The SDK owns transport
+ * retries (config.maxRetries): it retries 408/409/429/5xx + connection errors
+ * with jittered backoff and HONORS the server's retry-after header — so we do
+ * NOT add a second retry loop (that stacked to ~9 calls and minutes of backoff). */
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: config.maxRetries });
 
 export type MediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "application/pdf";
 
@@ -77,7 +80,7 @@ export interface ExtractOptions<T> {
 export async function extract<T>(opts: ExtractOptions<T>): Promise<ExtractionResult<T>> {
     const model = opts.model ?? config.model;
     const start = Date.now();
-    const raw = await callModelWithRetry(opts.input, opts.systemPrompt, model);
+    const raw = await callModel(opts.input, opts.systemPrompt, model);
 
     if (!raw || raw.trim().length === 0) throw new ExtractionError("empty", "Model returned no text content.");
 
@@ -97,11 +100,13 @@ export async function extract<T>(opts: ExtractOptions<T>): Promise<ExtractionRes
 }
 
 /**
- * Calls the model, retrying only on transient errors. A refusal or shape
- * mismatch won't improve by re-asking identically, so those fail fast rather
- * than burning latency against the per-label budget.
+ * Make the model call and return its raw text. Transient transport errors
+ * (429/5xx/connection) are retried inside the SDK (see the client config);
+ * application-level problems (refusal, bad JSON, shape mismatch) are handled by
+ * the caller in {@link extract} and deliberately NOT retried — re-asking
+ * identically won't help and would burn the per-label latency budget.
  */
-async function callModelWithRetry(input: ExtractionInput | ExtractionInput[], systemPrompt: string, model: string): Promise<string> {
+async function callModel(input: ExtractionInput | ExtractionInput[], systemPrompt: string, model: string): Promise<string> {
     const inputs = Array.isArray(input) ? input : [input];
     // Each source becomes its own content block; a leading note tells the model
     // that several sources describe one subject so it merges rather than picks.
@@ -110,35 +115,30 @@ async function callModelWithRetry(input: ExtractionInput | ExtractionInput[], sy
     const lead: any[] = inputs.length > 1
         ? [{ type: "text", text: `The following ${inputs.length} images are different views (e.g. front, back, neck) of a SINGLE label. Transcribe each field once, drawing from whichever view shows it.` }]
         : [];
-    let lastErr: unknown;
-    for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
-        try {
-            const message = await client.messages.create({
-                model,
-                max_tokens: config.maxTokens,
-                temperature: config.temperature, // 0 — verbatim transcription must be deterministic
-                system: systemPrompt,
-                messages: [{
-                    role: "user",
-                    content: [
-                        ...lead,
-                        ...sourceBlocks,
-                        { type: "text", text: "Transcribe per your instructions. Output JSON only." },
-                    ],
-                }],
-            });
-            return message.content
-                .filter((b): b is Anthropic.TextBlock => b.type === "text")
-                .map((b) => b.text)
-                .join("\n");
-        } catch (err) {
-            lastErr = err;
-            if (!isTransient(err) || attempt === config.maxRetries) break;
-            await sleep(config.retryBaseMs * 2 ** attempt); // exponential backoff
-        }
+    try {
+        const message = await client.messages.create({
+            model,
+            max_tokens: config.maxTokens,
+            temperature: config.temperature, // 0 — verbatim transcription must be deterministic
+            system: systemPrompt,
+            messages: [{
+                role: "user",
+                content: [
+                    ...lead,
+                    ...sourceBlocks,
+                    { type: "text", text: "Transcribe per your instructions. Output JSON only." },
+                ],
+            }],
+        });
+        return message.content
+            .filter((b): b is Anthropic.TextBlock => b.type === "text")
+            .map((b) => b.text)
+            .join("\n");
+    } catch (err) {
+        // The SDK has already exhausted its retries; classify the final failure.
+        if (isNetworkError(err)) throw new ExtractionError("network", `Could not reach the model API: ${errMsg(err)}`);
+        throw new ExtractionError("api", `Model API error: ${errMsg(err)}`);
     }
-    if (isNetworkError(lastErr)) throw new ExtractionError("network", `Could not reach the model API: ${errMsg(lastErr)}`);
-    throw new ExtractionError("api", `Model API error: ${errMsg(lastErr)}`);
 }
 
 /** Images and PDFs require different content-block shapes. */
@@ -164,14 +164,8 @@ export function stripToJson(text: string): string | null {
     return t.slice(first, last + 1);
 }
 
-/** Rate-limit (429) and 5xx are worth retrying; so are network failures. */
-function isTransient(err: unknown): boolean {
-    const status = (err as { status?: number })?.status;
-    if (status === 429) return true;
-    if (status && status >= 500) return true;
-    return isNetworkError(err);
-}
-
+/** Distinguish an unreachable API (firewall/outage) from an API-returned error,
+ *  so the orchestrator can surface a network problem differently from a bad doc. */
 function isNetworkError(err: unknown): boolean {
     const code = (err as { code?: string })?.code;
     return code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ENOTFOUND"
@@ -180,8 +174,4 @@ function isNetworkError(err: unknown): boolean {
 
 function errMsg(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
-}
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((r) => setTimeout(r, ms));
 }
