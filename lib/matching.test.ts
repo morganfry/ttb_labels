@@ -215,3 +215,53 @@ describe("overall rollup", () => {
     });
 });
 
+describe("confidence gate on ABSENT reads (an unreadable image must not fail)", () => {
+    it("a low-confidence absent required field is unreadable, not a confident fail", () => {
+        expect(statusOf(baseLabel({ brandName: fld(null, "low") }), baseApp(), "brandName").status).toBe("unreadable");
+    });
+    it("a high-confidence absent required field still fails", () => {
+        expect(statusOf(baseLabel({ brandName: fld(null, "high") }), baseApp(), "brandName").status).toBe("fail");
+    });
+    it("a missing warning fails regardless of low confidence (deliberate exception)", () => {
+        expect(statusOf(baseLabel({ governmentWarning: fld(null, "low") }), baseApp(), "governmentWarning").status).toBe("fail");
+    });
+});
+
+describe("uncertain source → country-of-origin", () => {
+    it("absent origin routes to review when source (item 3) was unreadable", () => {
+        expect(statusOf(baseLabel({ countryOfOrigin: fld(null) }), baseApp({ source: "imported" }), "countryOfOrigin", { source: "low" }).status).toBe("review");
+    });
+    it("still fails when source is confidently imported and origin is missing", () => {
+        expect(statusOf(baseLabel({ countryOfOrigin: fld(null) }), baseApp({ source: "imported" }), "countryOfOrigin").status).toBe("fail");
+    });
+});
+
+describe("spirits minimum-ABV floor (standard of identity)", () => {
+    it("vodka below 40% fails", () => {
+        const r = statusOf(baseLabel({ classType: fld("Vodka"), alcoholContent: fld("30% Alc./Vol.") }), baseApp(), "alcoholContent");
+        expect(r.status).toBe("fail"); expect(r.issues.join(" ")).toMatch(/40% minimum/);
+    });
+    it("vodka at the floor passes", () => {
+        expect(statusOf(baseLabel({ classType: fld("Vodka"), alcoholContent: fld("40% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("pass");
+    });
+    it("below-floor with a low-confidence designation routes to review, not a hard fail", () => {
+        expect(statusOf(baseLabel({ classType: fld("Vodka", "low"), alcoholContent: fld("30% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("review");
+    });
+    it("matches the designation as a WORD, not a substring (e.g. 'original' contains 'gin')", () => {
+        expect(statusOf(baseLabel({ classType: fld("Original Recipe Liqueur"), alcoholContent: fld("25% Alc./Vol.") }), baseApp(), "alcoholContent").status).toBe("pass");
+    });
+});
+
+describe("uncertain product type routes the whole verdict to review", () => {
+    it("low-confidence productType escalates to needsReview via the classType row", () => {
+        const res = verify(baseLabel(), baseApp(), { productType: "low" });
+        expect(res.overall).toBe("needsReview");
+        const ct = res.fields.find((f) => f.field === "classType")!;
+        expect(ct.status).toBe("review");
+        expect(ct.issues.join(" ")).toMatch(/product type/i);
+    });
+    it("high-confidence productType leaves a clean pass alone", () => {
+        expect(verify(baseLabel(), baseApp(), { productType: "high" }).overall).toBe("pass");
+    });
+});
+

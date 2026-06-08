@@ -75,7 +75,7 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
 - For CSV intake, each row's columns are treated as authoritative application (Part I) data — they are not re-read from any document — and the listed image names resolve to that application's label artwork among the uploaded images (loose files and/or a ZIP).
 - The canonical government-warning text used for the strict check is the standard 27 CFR 16.21 wording (verified verbatim against the current regulation on 2026-06-07). Re-verify if the regulation ever changes — the strict matcher is only as correct as that constant.
-- Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default is used, but in production this should gate to human confirmation, since it controls the whole comparison profile.
+- Product type (form item 5) selects which validation ruleset applies. When it can't be read confidently, a conservative default ruleset is used to evaluate the fields, but the verdict is routed to **review** (never a confident pass) because the ruleset selection itself was uncertain — the agent confirms the product type. Source (item 3) is gated the same way for the country-of-origin requirement.
 - The reviewing agent makes the final call. Every "review" outcome is an invitation for human judgment, not an automated rejection.
 
 ---

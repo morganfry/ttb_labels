@@ -116,6 +116,7 @@ async function callModelWithRetry(input: ExtractionInput | ExtractionInput[], sy
             const message = await client.messages.create({
                 model,
                 max_tokens: config.maxTokens,
+                temperature: config.temperature, // 0 — verbatim transcription must be deterministic
                 system: systemPrompt,
                 messages: [{
                     role: "user",

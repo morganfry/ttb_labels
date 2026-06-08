@@ -123,6 +123,9 @@ export function verify(
     appConfidence: Partial<Record<keyof ApplicationData, Confidence>> = {},
 ): VerificationResult {
     const ruleset = RULESET_BY_TYPE[app.productType];
+    // Item 3 (source) decides whether country-of-origin is required. If it was
+    // unreadable/low-confidence, we can't make that call — see absentDecision.
+    const sourceUncertain = lowConfidence(appConfidence.source);
     const fields: FieldResult[] = [];
 
     for (const key of Object.keys(FIELD_RULES) as (keyof LabelExtraction)[]) {
@@ -143,11 +146,19 @@ export function verify(
         // conditionally-required → review, otherwise N/A). absentDecision owns
         // that judgment so every conditional rule lives in one place.
         if (!field.found || field.value === null) {
-            const d = absentDecision(key, rule, app, ruleset);
+            const d = absentDecision(key, rule, app, ruleset, sourceUncertain);
+            // A low-confidence read can't reliably assert ABSENCE either: an
+            // unreadable image returns every field absent, so don't turn that into
+            // a confident "required field missing" fail — route to review. The
+            // government warning is the deliberate exception (missing fails always).
+            const downgrade = d.status === "fail" && key !== "governmentWarning" && lowConfidence(field.confidence);
             fields.push({
-                field: key, status: d.status,
+                field: key,
+                status: downgrade ? "unreadable" : d.status,
                 labelValue: null, applicationValue: appValue,
-                issues: d.issue ? [d.issue] : [],
+                issues: downgrade
+                    ? ["Field not found, but the label read was low-confidence; confirm presence by eye."]
+                    : (d.issue ? [d.issue] : []),
             });
             continue;
         }
@@ -176,6 +187,15 @@ export function verify(
 
         fields.push(dispatch(key, rule, field, appValue, ruleset));
     }
+
+    // Standard-of-identity minimum ABV for spirits designations (needs the
+    // designation AND the ABV together, which no single matcher sees).
+    applyAbvFloor(fields, label, ruleset);
+
+    // productType (item 5) selects the whole ruleset; if it was read with low
+    // confidence (or defaulted from an unreadable item 5), the selection itself
+    // is unreliable — surface that and route the verdict to review.
+    if (lowConfidence(appConfidence.productType)) flagProductTypeUncertain(fields);
 
     return { serialNumber: app.serialNumber, productType: app.productType, overall: rollup(fields), fields };
 }
@@ -229,8 +249,13 @@ function absentDecision(
     rule: typeof FIELD_RULES[keyof LabelExtraction],
     app: ApplicationData,
     ruleset: typeof RULESET_BY_TYPE[ProductType],
+    sourceUncertain: boolean,
 ): { status: FieldStatus; issue?: string } {
     if (key === "countryOfOrigin") {
+        // If item 3 (source) couldn't be read, we can't tell whether origin is
+        // required — route to review instead of silently treating it as domestic
+        // (which would suppress a genuine import requirement).
+        if (sourceUncertain) return { status: "review", issue: "Could not read whether the product is imported (form item 3); confirm whether country of origin is required on the label." };
         return app.source === "imported" && ruleset.requiresOriginIfImported
             ? { status: "fail", issue: "Country of origin is required for imported products but is missing from the label." }
             : { status: "notApplicable" };
@@ -260,6 +285,48 @@ function absentDecision(
 
 function naResult(key: keyof LabelExtraction, field: ExtractedField): FieldResult {
     return { field: key, status: "notApplicable", labelValue: field.value, applicationValue: null, issues: [] };
+}
+
+/**
+ * Standard-of-identity minimum ABV for distilled-spirits designations (27 CFR 5:
+ * e.g. rum / gin / vodka / whisky must state at least 40% ABV). The numeric
+ * matcher only checks the ABV is present and parseable (it's label-only), so the
+ * floor is enforced here, where both the designation (classType) and the ABV are
+ * visible. Only overrides a clean pass; a low-confidence designation routes to
+ * review rather than a confident fail.
+ */
+function applyAbvFloor(fields: FieldResult[], label: LabelExtraction, ruleset: typeof RULESET_BY_TYPE[ProductType]): void {
+    const floors = ruleset.abvMinByDesignation;
+    if (!floors) return;
+    const ac = fields.find((f) => f.field === "alcoholContent");
+    if (!ac || ac.status !== "pass") return; // only a clean pass can hide a below-floor value
+    const words = (label.classType.value ?? "").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    const designation = Object.keys(floors).find((d) => words.includes(d)); // word match, so "Virgin" ≠ gin
+    if (!designation) return;
+    const abv = parsePercent(label.alcoholContent.value ?? "");
+    if (abv === null) return;
+    const floor = floors[designation];
+    if (abv >= floor) return;
+    if (lowConfidence(label.classType.confidence)) {
+        ac.status = "review";
+        ac.issues = [...ac.issues, `${abv}% is below the ${floor}% minimum for "${designation}", but the class/type read was low-confidence — confirm.`];
+    } else {
+        ac.status = "fail";
+        ac.issues = [...ac.issues, `${abv}% ABV is below the ${floor}% minimum required for ${designation}.`];
+    }
+}
+
+/**
+ * Surface an uncertain ruleset selection. productType is a form field, not a
+ * label field, so we attach the warning to the classType row (the nearest
+ * "what kind of product" signal) and escalate it to review, which rolls the
+ * overall verdict up to needsReview.
+ */
+function flagProductTypeUncertain(fields: FieldResult[]): void {
+    const ct = fields.find((f) => f.field === "classType");
+    if (!ct) return;
+    if (ct.status === "pass" || ct.status === "notApplicable") ct.status = "review";
+    ct.issues = [...ct.issues, "Product type (form item 5) was read with low confidence; the validation ruleset may be wrong — confirm the product type before trusting these field verdicts."];
 }
 
 /** Collapse field statuses to one verdict: any fail dominates; else any

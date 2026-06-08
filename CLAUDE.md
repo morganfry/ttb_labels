@@ -80,9 +80,15 @@ never a confident `fail`. The government warning is the DELIBERATE exception: a
 wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
 
 ## Known, deliberate gaps — do not "fix" silently
-- productType default: when item 5 is unreadable, toApplicationData() defaults
-  to "distilledSpirits". Flagged for human-gating in production. Don't change
-  the behavior without discussing.
+- productType default: when item 5 is unreadable, toApplicationData() still
+  defaults app.productType to "distilledSpirits" to pick *a* ruleset, BUT marks
+  appConfidence.productType "low", so verify() escalates the whole verdict to
+  review (flagProductTypeUncertain). A low-confidence-but-present item 5 is
+  handled the same way. So the ruleset guess never silently produces a confident
+  pass — keep that. (source/item 3 is gated the same way for country-of-origin.)
+- The confidence gate also covers ABSENT reads: a low-confidence missing required
+  field is `unreadable`, not a confident fail (an unreadable image must not look
+  like a compliance violation). The government warning stays the exception.
 - Bold detection downgrades to `review`, not `fail` (soft visual signal).
 - Correlated misreads on matched fields can yield a false pass (see README
   limitations). Mitigated by the confidence gate, not eliminated.

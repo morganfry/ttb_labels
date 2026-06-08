@@ -239,25 +239,30 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
 /**
  * Map the form extraction into {@link ApplicationData} plus a confidence map.
  *
- * KNOWN GAP: productType (form item 5) selects the entire validation ruleset.
- * When unreadable it currently defaults to "distilledSpirits", which silently
- * picks a profile. For production this should gate to human confirmation
- * rather than guess — flagged here and in the README.
+ * productType (item 5) and source (item 3) drive the ruleset and the
+ * import/origin requirement. When item 5 is unreadable we still default to
+ * "distilledSpirits" to pick *a* profile, but the defaulted (or low-confidence)
+ * read is surfaced via appConfidence below as "low", so the matcher routes the
+ * verdict to review rather than trusting a guessed ruleset (see matching.ts).
  */
 function toApplicationData(form: FormExtraction): {
     app: ApplicationData; appConfidence: Partial<Record<keyof ApplicationData, Confidence>>;
 } {
     const app: ApplicationData = {
         serialNumber: form.serialNumber.value ?? "",
-        productType: form.productType.value ?? "distilledSpirits", // see KNOWN GAP above
-        source: form.source.value ?? "domestic",
+        productType: form.productType.value ?? "distilledSpirits", // defaulted; flagged low below
+        source: form.source.value ?? "domestic",                   // defaulted; flagged low below
         brandName: form.brandName.value ?? "",
         fancifulName: form.fancifulName.value ?? undefined,
         applicantNameAddress: form.applicantNameAddress.value ?? "",
         grapeVarietals: form.grapeVarietals.value ?? undefined,
         wineAppellation: form.wineAppellation.value ?? undefined,
     };
+    // A null default OR a low-confidence read of item 5 / item 3 makes the
+    // ruleset / import requirement unreliable; mark it low so the matcher gates.
     const appConfidence: Partial<Record<keyof ApplicationData, Confidence>> = {
+        productType: form.productType.value === null ? "low" : form.productType.confidence,
+        source: form.source.value === null ? "low" : form.source.confidence,
         brandName: form.brandName.confidence,
         applicantNameAddress: form.applicantNameAddress.confidence,
         wineAppellation: form.wineAppellation.confidence,
