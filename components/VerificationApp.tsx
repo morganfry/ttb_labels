@@ -128,15 +128,28 @@ export default function VerificationApp() {
         if (pending.length === 0) return;
         dispatch({ type: "runStart", ids: pending.map((it) => it.id) });
 
-        const body = new FormData();
-        body.append("pairs", JSON.stringify(pending.map((it) => ({ id: it.id, name: it.name }))));
-        // One combined document per item serves as both the form and label
-        // regions, so upload its bytes once — the server reuses them for both.
-        for (const it of pending) {
-            body.append(`file_${it.id}`, it.file!, it.name);
-        }
-
         try {
+            const body = new FormData();
+            body.append("pairs", JSON.stringify(pending.map((it) => ({ id: it.id, name: it.name }))));
+            // CHROME LARGE-UPLOAD FIX: read each file into memory and upload the
+            // bytes, instead of appending the disk-backed File and letting the
+            // browser stream it lazily during the POST. On managed devices a large
+            // file is often cloud-/network-backed (OneDrive Files-On-Demand, a
+            // network home dir); Chrome's lazy UPLOAD_DATA_STREAM_READ then fails
+            // at byte 0, sends RST_STREAM(INTERNAL_ERROR), and the POST dies with
+            // net::ERR_FAILED — while Firefox and curl succeed because they buffer
+            // the file first. Buffering here makes Chrome send from memory the same
+            // way. (Diagnosed from a chrome://net-export capture.) One combined
+            // document per item serves as both form and label regions, so its
+            // bytes are uploaded once and the server reuses them for both.
+            // Tradeoff: this holds every pending file's bytes in memory at once
+            // rather than streaming lazily. Fine for a handful; for a 200-300 file
+            // bulk run, switch to per-file (or chunked) uploads instead.
+            for (const it of pending) {
+                const buf = await it.file!.arrayBuffer();
+                body.append(`file_${it.id}`, new Blob([buf], { type: it.file!.type || "application/pdf" }), it.name);
+            }
+
             const res = await fetch("/api/verify", { method: "POST", body });
             if (!res.ok || !res.body) {
                 const msg = await res.text().catch(() => "");

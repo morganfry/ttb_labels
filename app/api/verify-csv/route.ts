@@ -81,18 +81,11 @@ export async function POST(req: Request): Promise<Response> {
 
     const stream = new ReadableStream({
         async start(controller) {
-            const write = (obj: unknown) => {
-                try { controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch { /* client gone */ }
-            };
-            // Announce the total up front so the client can size its progress bar
-            // before the first row finishes — this also flushes the first byte
-            // immediately. The periodic `ping` is the CHROME LARGE-UPLOAD FIX
-            // (see app/api/verify/route.ts): it keeps the response from going
-            // byte-silent during a long gap between rows, which Chrome aborts with
-            // net::ERR_FAILED. The client ignores the ping.
-            write({ type: "start", total: items.length });
-            const keepAlive = setInterval(() => write({ type: "ping" }), 10_000);
+            const write = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
             try {
+                // Announce the total up front so the client can size its progress
+                // bar before the first row finishes.
+                write({ type: "start", total: items.length });
                 const summary = await processCsvBatch(items, {
                     signal: abort.signal,
                     persist: saveResult,
@@ -104,7 +97,6 @@ export async function POST(req: Request): Promise<Response> {
             } catch (e) {
                 write({ type: "error", message: e instanceof Error ? e.message : String(e) });
             } finally {
-                clearInterval(keepAlive);
                 controller.close();
             }
         },
