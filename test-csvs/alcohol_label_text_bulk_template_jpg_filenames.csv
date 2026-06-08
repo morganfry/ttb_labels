@@ -1,4 +1,4 @@
-serialNumber,productType,source,brandName,fancifulName,applicantNameAddress,grapeVarietals,wineAppellation,labelImageUrls
+serialNumber,productType,source,brandName,fancifulName,applicantNameAddress,grapeVarietals,wineAppellation,labelImages
 24-W01,wine,domestic,Sunridge Cellars,2024 Chardonnay,"Sunridge Cellars, Paso Robles, CA",Chardonnay,California,"[""wine_label_01.jpg""]"
 24-W02,wine,domestic,Oak Valley Estate,2023 Cabernet Sauvignon,"Oak Valley Estate Winery, Napa, CA",Cabernet Sauvignon,Napa Valley,"[""wine_label_02.jpg""]"
 24-W03,wine,domestic,Moonlight Vineyard,Pinot Noir,"Moonlight Vineyard LLC, Dundee, OR",Pinot Noir,Willamette Valley,"[""wine_label_03.jpg""]"
