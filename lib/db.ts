@@ -68,9 +68,25 @@ export async function transaction<T>(fn: (q: TxQuery) => Promise<T>): Promise<T>
 }
 
 let migrated = false;
+let migrating: Promise<void> | null = null;
 
-export async function migrate(): Promise<void> {
-    if (migrated) return;
+/**
+ * Create the schema if absent. Every route calls this per request, so the
+ * in-flight run is memoized: concurrent first requests on a cold start share one
+ * migration instead of racing on CREATE INDEX. On failure the promise is cleared
+ * so a later request retries.
+ */
+export function migrate(): Promise<void> {
+    if (migrated) return Promise.resolve();
+    if (!migrating) {
+        migrating = runMigration()
+            .then(() => { migrated = true; })
+            .finally(() => { migrating = null; });
+    }
+    return migrating;
+}
+
+async function runMigration(): Promise<void> {
     await sql`
     CREATE TABLE IF NOT EXISTS verification (
       id            TEXT PRIMARY KEY,
@@ -96,5 +112,4 @@ export async function migrate(): Promise<void> {
     await sql`CREATE INDEX IF NOT EXISTS idx_verif_brand   ON verification(brand_name)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_verif_created ON verification(created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_field_verif   ON field_result(verification_id)`;
-    migrated = true;
 }

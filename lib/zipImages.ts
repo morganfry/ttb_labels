@@ -78,6 +78,7 @@ export interface ZipBudget {
  */
 export function indexImageSources(sources: readonly RawImageSource[], budget?: ZipBudget): ZipImageIndex {
     const byPath = new Map<string, Uint8Array>();
+    const pathCount = new Map<string, number>();
     const baseCount = new Map<string, number>();
     const baseFirst = new Map<string, Uint8Array>();
 
@@ -86,6 +87,7 @@ export function indexImageSources(sources: readonly RawImageSource[], budget?: Z
         if (ZIP_JUNK_RE.test(rawPath)) return; // archive cruft
         const path = normalizeZipPath(rawPath);
         if (path === "") return;
+        pathCount.set(path, (pathCount.get(path) ?? 0) + 1);
         byPath.set(path, data);
         const base = path.split("/").pop()!;
         baseCount.set(base, (baseCount.get(base) ?? 0) + 1);
@@ -110,6 +112,13 @@ export function indexImageSources(sources: readonly RawImageSource[], budget?: Z
         } else {
             add(src.name, src.bytes);
         }
+    }
+
+    // A full path supplied by two sources (e.g. a loose "a.png" and a ZIP entry
+    // "a.png") is ambiguous: drop it rather than silently resolving to whichever
+    // was added last. The ref then reads as "not found" so the user disambiguates.
+    for (const [path, count] of pathCount) {
+        if (count > 1) byPath.delete(path);
     }
 
     const byBase = new Map<string, Uint8Array>();

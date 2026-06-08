@@ -25,7 +25,10 @@ export async function search(q: SearchQuery): Promise<SearchPage> {
     if (q.overall)      { where.push(`overall = ${p()}`); args.push(q.overall); }
     if (q.productType)  { where.push(`product_type = ${p()}`); args.push(q.productType); }
     if (q.fromDate)     { where.push(`created_at >= ${p()}`); args.push(q.fromDate); }
-    if (q.toDate)       { where.push(`created_at <= ${p()}`); args.push(q.toDate); }
+    // `< toDate + 1 day` so a date-only bound (e.g. "2026-06-07", which Postgres
+    // reads as midnight) still includes every record created that whole day,
+    // rather than excluding everything after 00:00:00.
+    if (q.toDate)       { where.push(`created_at < (${p()}::date + 1)`); args.push(q.toDate); }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const limit = Math.min(q.limit ?? 50, 200);
     const offset = q.offset ?? 0;

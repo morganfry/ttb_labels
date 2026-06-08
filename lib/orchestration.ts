@@ -249,7 +249,9 @@ function toApplicationData(form: FormExtraction): {
     app: ApplicationData; appConfidence: Partial<Record<keyof ApplicationData, Confidence>>;
 } {
     const app: ApplicationData = {
-        serialNumber: form.serialNumber.value ?? "",
+        // A blank serial would persist an unidentifiable audit row; use a visible
+        // placeholder so an unreadable item 4 is obvious in search/history.
+        serialNumber: form.serialNumber.value || "(unreadable)",
         productType: form.productType.value ?? "distilledSpirits", // defaulted; flagged low below
         source: form.source.value ?? "domestic",                   // defaulted; flagged low below
         brandName: form.brandName.value ?? "",

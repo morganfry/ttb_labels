@@ -78,6 +78,16 @@ describe("indexImageSources (loose files and ZIPs in one index)", () => {
         expect(lookupZipImage(idx, "a/logo.png")).toEqual(bytes("A")); // full paths still work
         expect(lookupZipImage(idx, "b/logo.png")).toEqual(bytes("B"));
     });
+
+    it("drops a full path supplied by two sources rather than silently overriding", () => {
+        // A loose file and a ZIP entry resolve to the same path "a.png": ambiguous,
+        // so neither resolves (the user must rename/remove one) — no last-write-wins.
+        const idx = indexImageSources([
+            { name: "a.png", bytes: bytes("LOOSE") },
+            { zip: zip({ "a.png": "ZIP" }) },
+        ]);
+        expect(zipHasImage(idx, "a.png")).toBe(false);
+    });
 });
 
 describe("indexImageSources decompressed budget (zip-bomb guard)", () => {
