@@ -3,7 +3,10 @@
 import { useReducer, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
-import { uid, isPdf, isImage, isZip, OVERALL_META } from "@/lib/uiTypes";
+import { uid, isPdf, isImage, isZip, OVERALL_META, isCompleted } from "@/lib/uiTypes";
+import { readNdjsonStream, type StreamEvent } from "@/lib/ndjsonStream";
+import type { VerificationResult } from "@/lib/schema";
+import type { BatchErrorInfo } from "@/lib/orchestration";
 import { useClientConfig } from "./ClientConfigProvider";
 import { extractZipDocs } from "@/lib/zipDocs";
 import { Dropzone } from "./Dropzone";
@@ -26,7 +29,7 @@ type Action =
     | { type: "remove"; id: string }
     | { type: "reset" }
     | { type: "runStart"; ids: string[] }
-    | { type: "result"; id: string; ok: boolean; result: unknown; error: unknown; latencyMs?: number; timings?: Item["timings"] }
+    | { type: "result"; id: string; ok: boolean; result: VerificationResult | null; error: BatchErrorInfo | null; latencyMs?: number; timings?: Item["timings"] }
     | { type: "runError"; message: string }
     | { type: "runDone" };
 
@@ -118,9 +121,9 @@ export default function VerificationApp() {
     const removeItem = (id: string) => dispatch({ type: "remove", id });
     const reset = () => dispatch({ type: "reset" });
 
-    const handleStreamLine = (evt: any) => {
+    const handleStreamLine = (evt: StreamEvent) => {
         if (evt.type === "result") {
-            dispatch({ type: "result", id: evt.id, ok: evt.ok, result: evt.result, error: evt.error, latencyMs: evt.latencyMs, timings: evt.timings });
+            dispatch({ type: "result", id: evt.id, ok: evt.ok, result: evt.ok ? evt.result : null, error: evt.ok ? null : evt.error, latencyMs: evt.latencyMs, timings: evt.timings });
         } else if (evt.type === "error") {
             // The server hit a fatal error after the stream opened. Surface it and
             // revert still-"processing" rows to queued — otherwise they stick in
@@ -148,23 +151,7 @@ export default function VerificationApp() {
                 const msg = await res.text().catch(() => "");
                 throw new Error(msg || `Server returned ${res.status}`);
             }
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buf = "";
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buf += decoder.decode(value, { stream: true });
-                let nl;
-                while ((nl = buf.indexOf("\n")) >= 0) {
-                    const line = buf.slice(0, nl).trim();
-                    buf = buf.slice(nl + 1);
-                    if (line) try { handleStreamLine(JSON.parse(line)); }
-                        catch { console.error("Malformed NDJSON line:", line); }
-                }
-            }
-            if (buf.trim()) try { handleStreamLine(JSON.parse(buf.trim())); }
-                catch { console.error("Malformed NDJSON trailing data:", buf.trim()); }
+            await readNdjsonStream(res, handleStreamLine);
         } catch (e) {
             dispatch({ type: "runError", message: e instanceof Error ? e.message : "Processing failed." });
         } finally {
@@ -237,11 +224,11 @@ export default function VerificationApp() {
                                 </div>
                             ))}
                         </div>
-                        <LatencySummary items={docItems.filter((it) => it.result)} />
+                        <LatencySummary items={docItems.filter(isCompleted)} />
                     </div>
                 )}
 
-                {hasResults && <ResultsTable items={docItems.filter((it) => it.result)} />}
+                {hasResults && <ResultsTable items={docItems.filter(isCompleted)} />}
 
                 {/* Only when a verdict was actually persisted (errored items save
                     nothing), so the link never points at an empty history of this run. */}

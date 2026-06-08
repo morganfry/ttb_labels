@@ -1,13 +1,25 @@
 import type { ComponentType } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, Eye } from "lucide-react";
-import type { ItemTimings } from "./orchestration";
+import type { ItemTimings, BatchErrorInfo } from "./orchestration";
+import type { VerificationResult } from "./schema";
+
+export type ItemStatus = "queued" | "processing" | "done";
 
 export type Item = {
     id: string; name: string; kind: "pdf" | "image" | "csv"; fromZip: string | null;
-    status: string; result: any; error?: any; file?: File;
+    status: ItemStatus;
+    /** The verdict once done; null while queued/processing or on a failed read. */
+    result: VerificationResult | null;
+    /** Present on a failed read (no verdict). */
+    error?: BatchErrorInfo | null;
+    file?: File;
     /** End-to-end processing time and per-stage breakdown, from the stream. */
     latencyMs?: number; timings?: ItemTimings;
 };
+
+/** An item that has a verdict — what the results table / summaries render. */
+export type CompletedItem = Item & { result: VerificationResult };
+export const isCompleted = (it: Item): it is CompletedItem => it.result !== null;
 
 /** Compact human duration: "840 ms" under a second, "3.2s" above. */
 export function formatLatency(ms: number): string {

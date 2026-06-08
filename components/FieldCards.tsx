@@ -1,6 +1,7 @@
+import type { FieldResult } from "@/lib/schema";
 import { FIELD_LABELS, STATUS_META } from "@/lib/uiTypes";
 
-export function FieldCards({ fields }: { fields: any[] }) {
+export function FieldCards({ fields }: { fields: FieldResult[] }) {
     return (
         <div className="grid gap-3 p-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
             {fields.map((fr) => {

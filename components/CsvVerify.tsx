@@ -3,7 +3,8 @@
 import { useRef, useReducer, useMemo, useState, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Images, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
-import { OVERALL_META, isZip, isImage } from "@/lib/uiTypes";
+import { OVERALL_META, isZip, isImage, isCompleted } from "@/lib/uiTypes";
+import { readNdjsonStream, type StreamEvent } from "@/lib/ndjsonStream";
 import { useClientConfig } from "./ClientConfigProvider";
 import { parseCsv, CSV_COLUMNS, IMAGE_REFS_COLUMN, type CsvRow } from "@/lib/csvParse";
 import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex, type ZipBudget } from "@/lib/zipImages";
@@ -219,7 +220,7 @@ export default function CsvVerify() {
         URL.revokeObjectURL(url);
     };
 
-    const handleStreamLine = (evt: any) => {
+    const handleStreamLine = (evt: StreamEvent) => {
         if (evt.type === "start") dispatch({ type: "streamStart", total: evt.total });
         else if (evt.type === "progress") dispatch({ type: "streamProgress", done: evt.done });
         else if (evt.type === "result") {
@@ -250,23 +251,7 @@ export default function CsvVerify() {
                 try { msg = (await res.json())?.error ?? ""; } catch { /* not json */ }
                 throw new Error(msg || `Server returned ${res.status}`);
             }
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buf = "";
-            while (true) {
-                const { value, done: streamDone } = await reader.read();
-                if (streamDone) break;
-                buf += decoder.decode(value, { stream: true });
-                let nl;
-                while ((nl = buf.indexOf("\n")) >= 0) {
-                    const line = buf.slice(0, nl).trim();
-                    buf = buf.slice(nl + 1);
-                    if (line) try { handleStreamLine(JSON.parse(line)); }
-                        catch { console.error("Malformed NDJSON line:", line); }
-                }
-            }
-            if (buf.trim()) try { handleStreamLine(JSON.parse(buf.trim())); }
-                catch { console.error("Malformed NDJSON trailing data:", buf.trim()); }
+            await readNdjsonStream(res, handleStreamLine);
         } catch (e) {
             dispatch({ type: "runError", message: e instanceof Error ? e.message : "Processing failed." });
         } finally {
@@ -274,7 +259,7 @@ export default function CsvVerify() {
         }
     };
 
-    const resultItems = items.filter((it) => it.result);
+    const resultItems = items.filter(isCompleted);
     const errorItems = items.filter((it) => !it.result);
     const hasResults = items.length > 0;
     // Show the summary/latency rollup once the run has finished with at least one

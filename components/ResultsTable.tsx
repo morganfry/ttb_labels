@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Item } from "@/lib/uiTypes";
+import type { Item, CompletedItem } from "@/lib/uiTypes";
+import type { FieldResult } from "@/lib/schema";
 import { FIELD_LABELS, FIELD_ORDER, STATUS_META, formatLatency } from "@/lib/uiTypes";
 import { useClientConfig } from "./ClientConfigProvider";
 import { OverallBadge } from "./StatusBadges";
@@ -14,7 +15,7 @@ const STAGE_LABELS: [keyof NonNullable<Item["timings"]>, string][] = [
     ["matchMs", "Match"],
 ];
 
-export function ResultsTable({ items }: { items: Item[] }) {
+export function ResultsTable({ items }: { items: CompletedItem[] }) {
     const [expanded, setExpanded] = useState<string | null>(null);
     return (
         <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -32,7 +33,7 @@ export function ResultsTable({ items }: { items: Item[] }) {
                     </thead>
                     <tbody>
                     {items.map((it) => {
-                        const byField = Object.fromEntries(it.result.fields.map((f: any) => [f.field, f]));
+                        const byField: Record<string, FieldResult> = Object.fromEntries(it.result.fields.map((f) => [f.field, f]));
                         const open = expanded === it.id;
                         return <ResultRow key={it.id} it={it} byField={byField} open={open} onToggle={() => setExpanded(open ? null : it.id)} />;
                     })}
@@ -47,7 +48,7 @@ export function ResultsTable({ items }: { items: Item[] }) {
 }
 
 function ResultRow({ it, byField, open, onToggle }:
-                   { it: Item; byField: Record<string, any>; open: boolean; onToggle: () => void }) {
+                   { it: CompletedItem; byField: Record<string, FieldResult>; open: boolean; onToggle: () => void }) {
     const { latencyTargetMs } = useClientConfig();
     return (
         <>
