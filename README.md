@@ -1,6 +1,6 @@
 # TTB Label Verification — Prototype
 
-> **▶ Live app: <https://ttb-label-verification-10j1.onrender.com/>** — deployed and ready to test, no login required.
+> **▶ Live app: <https://ttb-label-verification-10j1.onrender.com/>** — deployed and ready to test. Access is password-protected (HTTP Basic Auth); credentials are shared with the submission rather than committed here.
 
 An AI-assisted tool for reviewing alcohol beverage label applications (TTB COLA, Form 5100.31). An agent uploads combined application documents; the app extracts the label fields and the form's Part I data, checks them against TTB requirements, and returns a per-field pass / review / fail verdict in a searchable table. Applications can be submitted three ways: as a combined PDF, as a flat image (JPG/PNG) of one, or — for bulk runs — as a CSV of application data whose label images are referenced by file name and uploaded alongside (loose files and/or a ZIP).
 
