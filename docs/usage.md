@@ -25,7 +25,7 @@ Switch to the **CSV bulk** tab on the Verify screen when you already have the ap
 
 2. **Upload it.** Drag the CSV in or browse to it. The app parses it immediately and shows how many rows are valid and lists any rows with errors (a bad product type, a malformed reference array, a missing required value). Bad rows don't block the others — they're reported, not verified.
 
-3. **(If using local files) upload the images.** When any row references files by name, an uploader appears — drop the images individually and/or as a ZIP. The app reads them in the browser and flags any referenced file that isn't among them, before you run. URL-only batches can skip this.
+3. **Upload the images.** A row references its label artwork by file name, so an uploader appears — drop the images individually and/or as a ZIP. The app reads them in the browser and flags any referenced name that isn't among the uploads, before you run. (Images are always uploaded, never fetched from a URL.)
 
 4. **Verify.** Click **Verify N rows**. As with PDFs, results stream into the same table row by row, with the same per-field verdicts and expandable detail. Rows whose images weren't found among the uploads, or couldn't be read, are listed separately with the reason.
 

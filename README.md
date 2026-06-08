@@ -31,7 +31,7 @@ Running on the host instead, the full environment-variable list, and container d
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
 - **Verification** — deterministic matching checks each field with the logic appropriate to it: tolerant matching for names, numeric tolerance for alcohol content and net contents, strict exact matching for the government warning.
 - **Streaming results** — applications process concurrently and results stream back per-item, filling a color-coded table (green / amber / red per field) as each finishes. A summary strip tallies passed / needs-review / failed.
-- **Latency measurement** — each result carries its end-to-end processing time and a per-stage breakdown (slice / image fetch / label read / form read / match). The table shows per-item time (flagged when it exceeds the target), the row detail shows the breakdown, and a run rollup reports median / p95 and how many items cleared the ≈5-second target (`LATENCY_TARGET_MS`, default 5000) — making the compliance team's hard latency bar visible and verifiable.
+- **Latency measurement** — each result carries its end-to-end processing time and a per-stage breakdown (slice / resolve images / label read / form read / match). The table shows per-item time (flagged when it exceeds the target), the row detail shows the breakdown, and a run rollup reports median / p95 and how many items cleared the ≈5-second target (`LATENCY_TARGET_MS`, default 5000) — making the compliance team's hard latency bar visible and verifiable.
 - **Result detail** — clicking any result expands a per-field breakdown showing the extracted value and the specific reason for any flag.
 - **Searchable history** — every verdict is persisted. A search screen filters past reviews by serial number, brand (partial), outcome, product type, and date range, with pagination and on-demand detail.
 - **Two-screen navigation** — a top nav links the Verify and Review History screens.
@@ -70,6 +70,12 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 
 ---
 
+## Testing
+
+The deterministic core is unit-tested with Vitest (`npm test`): the matcher / judge (`lib/matching.test.ts` — the confidence gate, the three matchers, the per-product rulesets, the strict warning check, the spirits ABV floor) and the intake layer (CSV tokenizer + validation, image resolution, the ZIP decompressed budgets). An end-to-end test (`lib/e2e.test.ts`) runs a batch through the *real* pipeline with the model calls replaced by fixtures, so the **judgment** is verified without depending on a live model. What's intentionally *not* unit-tested is model accuracy itself (non-deterministic — validated by hand against real labels) and the persistence / HTTP boundary (exercised against the live deploy). The same suite is the CI gate (`.github/workflows/ci.yml`): typecheck · test · build must pass before a deploy ships.
+
+---
+
 ## Assumptions
 
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
@@ -91,6 +97,10 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 - **Net-contents parsing is not exhaustive.** Common units (mL, cL, L, fl oz) are handled; compound US statements like "1 PINT 9 FL OZ" are not yet parsed and would flag for review.
 
 - **Tolerant fields apply field-aware normalization + a containment rule.** Before scoring, the producer name/address folds away a label-only "BOTTLED BY"-style prefix and maps full US state names to abbreviations ("…Charleston, South Carolina" ≡ "…, SC"), and the fanciful name drops a leading vintage year ("2023 Rosé" ≡ "Rosé"). In addition, when one name's words are fully contained in the other (≥2 shared words) it's treated as a confident match — so a label that drops a suffix ("VERONA HILLS" ≡ "Verona Hills Vineyards") or carries extra boilerplate ("ESTATE BOTTLED BY …") still matches. All of this affects only the *scored* text (displayed values stay verbatim). The trade-off is a small, rare false-pass surface — a company named after a state, two fanciful names differing only by a leading year, or a name that is a strict subset of an unrelated one — bounded by the confidence gate and human review; none of it can affect the government warning.
+
+### Performance
+
+- **Single-label latency is ~7 s today — above the 5-second aspiration, by design honestly stated.** The brief's hard bar is per-label ("about 5 seconds"). Measured end-to-end, one application takes ~7 s, dominated by the two vision reads; that latency is essentially *fixed per model call* — independent of image resolution or file size — so it's a model-tier and endpoint question, not an architecture one. What the design already does about it: the label and form reads run **concurrently**, the label read defaults to a **faster tier** (Haiku), the PDF is **sliced** so only the relevant pages are sent, and results **stream per item** so batch throughput never waits on a single slow label. Closing the remaining gap is a faster/cheaper tier or a lower-round-trip in-VPC endpoint (Bedrock), not a rewrite. The UI surfaces the actual per-item time plus run median / p95 against the target (`LATENCY_TARGET_MS`), so the bar is *measured, not assumed*.
 
 ### Security & resource limits
 

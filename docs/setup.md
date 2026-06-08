@@ -66,8 +66,7 @@ PDF_ZIP_MAX_TOTAL_BYTES=524288000 # optional; max total decompressed PDFs from o
 `.env.local` is gitignored and read only in local development.
 
 ## Before first run
-- Set the model via `MODEL` or the default in `lib/config.ts`.
-- Verify the installed `@anthropic-ai/sdk` and `pg` versions match the call shapes in `lib/extraction.ts` and `lib/db.ts`.
+- The model ids in `lib/config.ts` (or `MODEL` / `LABEL_MODEL` / `FORM_MODEL`) must be valid, current Anthropic model ids — confirm them before a real run.
 
 ## Deploy to any server
 Build the container and run it anywhere — a cloud VM, a container platform, or on-prem:
@@ -79,3 +78,5 @@ docker run -p 3000:3000 \
   label-verification
 ```
 The schema is created on the first request (idempotent migration). If a reverse proxy sits in front, disable response buffering so the verify route can stream results incrementally (the route sets `X-Accel-Buffering: no` for nginx).
+
+The live demo deploys to **Render**: a persistent Docker web service plus a managed Postgres, provisioned by [`render.yaml`](../render.yaml) (a Render Blueprint), and shipped **test-gated** by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — typecheck · test · build run on every push, and only a green `main` POSTs Render's deploy hook (Render's own auto-deploy is off, so a red build blocks the deploy). A persistent server is used over serverless because the app uploads whole PDFs (past serverless body caps) and streams NDJSON results. Both files are commented with the full setup.
