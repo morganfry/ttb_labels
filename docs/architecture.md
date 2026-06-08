@@ -18,7 +18,9 @@ prompt.
 A single Next.js deployable plus a database, talking to one external service (the
 vision model) and — for CSV-by-URL intake only — arbitrary image hosts. The
 dashed box is the trust/network boundary: the only required outbound traffic is
-to the model API, which in a locked-down federal network must be allow-listed.
+to the model API, which in a locked-down federal network must be allow-listed
+(or, more likely in production, swapped for Claude on in-VPC AWS Bedrock — a
+localized change at `extraction.ts`; see README limitations).
 
 ```mermaid
 flowchart LR

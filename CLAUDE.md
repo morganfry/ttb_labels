@@ -317,7 +317,11 @@ sets `X-Accel-Buffering: no` for nginx).
 - Net-contents parsing handles mL/cL/L/fl oz; compound US statements
   ("1 PINT 9 FL OZ") flag for review.
 - The model API is a cloud call; in a restricted network it may need
-  allow-listing or an in-network model.
+  allow-listing or an in-network model. Likely prod path: Claude on AWS Bedrock
+  (in-VPC, IAM auth) — a localized change since all model calls funnel through
+  callModelWithRetry in extraction.ts, and Bedrock Claude takes the same messages
+  shape/prompts so accuracy is unchanged. (Kept as Anthropic-only here on purpose
+  — a provider abstraction is YAGNI for the prototype; see README limitations.)
 - CSV image fetching is server-side with only a best-effort SSRF guard (http(s)
   only; loopback/link-local/RFC-1918 rejected) + size/timeout caps; production
   needs an allow-list or egress proxy.
