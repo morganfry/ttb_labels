@@ -20,8 +20,12 @@ export async function search(q: SearchQuery): Promise<SearchPage> {
     const where: string[] = [];
     const args: (string | number)[] = [];
     const p = () => `$${args.length + 1}`;
-    if (q.serialNumber) { where.push(`serial_number = ${p()}`); args.push(q.serialNumber); }
-    if (q.brand)        { where.push(`brand_name ILIKE ${p()}`); args.push(`%${q.brand}%`); }
+    // Serial match is case-insensitive (and whitespace-tolerant) to match the
+    // tolerant spirit of the other text filters — "ab1234" finds "AB1234".
+    if (q.serialNumber) { where.push(`UPPER(serial_number) = UPPER(${p()})`); args.push(q.serialNumber.trim()); }
+    // Escape LIKE metacharacters so a literal % or _ in the brand is matched as
+    // text, not as a wildcard (default ESCAPE is backslash).
+    if (q.brand)        { where.push(`brand_name ILIKE ${p()}`); args.push(`%${escapeLike(q.brand)}%`); }
     if (q.overall)      { where.push(`overall = ${p()}`); args.push(q.overall); }
     if (q.productType)  { where.push(`product_type = ${p()}`); args.push(q.productType); }
     if (q.fromDate)     { where.push(`created_at >= ${p()}`); args.push(q.fromDate); }
@@ -63,6 +67,11 @@ export async function getResult(id: string): Promise<VerificationResult | null> 
             issues: Array.isArray(r.issues) ? r.issues : [],
         })),
     };
+}
+
+/** Escape the LIKE/ILIKE wildcards (\ % _) so user text matches literally. */
+function escapeLike(s: string): string {
+    return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 function rowToSummary(r: Record<string, unknown>): VerificationSummary {

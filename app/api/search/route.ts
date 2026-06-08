@@ -24,8 +24,10 @@ export async function GET(req: Request): Promise<Response> {
         offset: numParam(p.get("offset"), 0),
     };
 
+    // Log the detail server-side; return a generic message so internals (driver
+    // errors, column names, host) never reach the client.
     try { return Response.json(await search(q)); }
-    catch (e) { console.error("Search error:", e); return Response.json({ error: e instanceof Error ? e.message : "Search failed." }, { status: 500 }); }
+    catch (e) { console.error("Search error:", e); return Response.json({ error: "Search failed." }, { status: 500 }); }
 }
 
 /** Parse a non-negative integer query param, falling back on anything invalid. */

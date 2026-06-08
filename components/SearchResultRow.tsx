@@ -25,7 +25,9 @@ export function SearchResultRow({ row }: { row: Summary }) {
 
     return (
         <>
-            <tr onClick={toggle} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50">
+            <tr onClick={toggle} tabIndex={0} aria-expanded={open}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}
+                className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600">
                 <td className="px-4 py-3 font-medium text-slate-700">{row.serialNumber}</td>
                 <td className="px-4 py-3 text-slate-700">{row.brandName ?? <span className="text-slate-400">—</span>}</td>
                 <td className="px-4 py-3 text-slate-600">{PRODUCT_LABELS[row.productType] ?? row.productType}</td>

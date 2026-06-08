@@ -293,11 +293,15 @@ export default function CsvVerify() {
         <>
             {!file ? (
                 <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Add a CSV: drag and drop here, or activate to browse"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); inputRef.current?.click(); } }}
                     onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                     onDragLeave={() => setDragging(false)}
                     onDrop={(e) => { e.preventDefault(); setDragging(false); onPick(e.dataTransfer?.files ?? null); }}
                     onClick={() => inputRef.current?.click()}
-                    className={`mb-5 cursor-pointer rounded-2xl border-2 border-dashed bg-white px-6 py-11 text-center transition-colors ${
+                    className={`mb-5 cursor-pointer rounded-2xl border-2 border-dashed bg-white px-6 py-11 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                         dragging ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}
                 >
                     <Upload size={40} strokeWidth={1.5} className={`mx-auto mb-3 ${dragging ? "text-blue-600" : "text-slate-500"}`} />
@@ -336,10 +340,14 @@ export default function CsvVerify() {
 
             {file && imageFiles.length === 0 && (
                 <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Add label images: drag and drop images or a ZIP here, or activate to browse"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); imageInputRef.current?.click(); } }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => { e.preventDefault(); onPickImages(e.dataTransfer?.files ?? null); }}
                     onClick={() => imageInputRef.current?.click()}
-                    className={`mb-5 flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-3.5 transition-colors ${
+                    className={`mb-5 flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-3.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                         preview?.needsImages ? "border-amber-300 hover:border-amber-400" : "border-slate-300 hover:border-slate-400"}`}
                 >
                     <Images size={22} className={`shrink-0 ${preview?.needsImages ? "text-amber-600" : "text-slate-400"}`} />

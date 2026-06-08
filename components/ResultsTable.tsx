@@ -50,7 +50,9 @@ function ResultRow({ it, byField, open, onToggle }:
                    { it: Item; byField: Record<string, any>; open: boolean; onToggle: () => void }) {
     return (
         <>
-            <tr onClick={onToggle} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50">
+            <tr onClick={onToggle} tabIndex={0} aria-expanded={open}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
+                className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600">
                 <td className="sticky left-0 z-10 bg-white px-3.5 py-3 text-left">
                     <span className="inline-block max-w-[200px] truncate align-middle font-medium text-slate-700" title={it.name}>{it.name}</span>
                 </td>

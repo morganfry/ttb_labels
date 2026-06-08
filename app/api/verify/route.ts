@@ -79,7 +79,9 @@ export async function POST(req: Request): Promise<Response> {
                 });
                 write({ type: "summary", ...summary });
             } catch (e) {
-                write({ type: "error", message: e instanceof Error ? e.message : String(e) });
+                // Log the detail; send the client a generic message (no internals).
+                console.error("Verify batch error:", e);
+                write({ type: "error", message: "Processing failed on the server." });
             } finally {
                 controller.close();
             }

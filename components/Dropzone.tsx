@@ -29,12 +29,16 @@ export function Dropzone({ onFiles }: { onFiles: (files: FileList) => void }) {
 
     return (
         <div
+            role="button"
+            tabIndex={0}
+            aria-label="Add application files: drag and drop here, or activate to browse"
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); inputRef.current?.click(); } }}
             onDragEnter={(e) => { e.preventDefault(); depth.current += 1; setDragging(true); }}
             onDragOver={(e) => e.preventDefault()}
             onDragLeave={() => { depth.current -= 1; if (depth.current <= 0) setDragging(false); }}
             onDrop={onDrop}
             onClick={() => inputRef.current?.click()}
-            className={`mb-5 cursor-pointer rounded-2xl border-2 border-dashed bg-white px-6 py-11 text-center transition-colors ${
+            className={`mb-5 cursor-pointer rounded-2xl border-2 border-dashed bg-white px-6 py-11 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                 dragging ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}
         >
             <Upload size={40} strokeWidth={1.5} className={`mx-auto mb-3 ${dragging ? "text-blue-600" : "text-slate-500"}`} />

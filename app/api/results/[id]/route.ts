@@ -12,7 +12,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         if (!result) return Response.json({ error: "Not found." }, { status: 404 });
         return Response.json(result);
     } catch (e) {
+        // Generic client message; the detail stays in the server log only.
         console.error("Result lookup error:", e);
-        return Response.json({ error: e instanceof Error ? e.message : "Lookup failed." }, { status: 500 });
+        return Response.json({ error: "Lookup failed." }, { status: 500 });
     }
 }
