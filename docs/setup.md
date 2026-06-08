@@ -42,7 +42,9 @@ npm test
 ```
 ANTHROPIC_API_KEY=sk-ant-...                            # required; never commit
 DATABASE_URL=postgres://app:app@localhost:5432/labels   # required
-PGSSLMODE=require        # only if your Postgres requires TLS (managed providers)
+PGSSLMODE=require        # only if your Postgres requires TLS — VALIDATES the server cert (set PGSSLROOTCERT for a provider CA bundle)
+# PGSSLMODE=no-verify    # encrypt WITHOUT validating the cert — dev / self-signed only (MITM-able)
+# PGSSLROOTCERT=/path/ca.pem  # CA bundle to trust when validating
 MODEL=claude-...         # optional; general/default model (default in lib/config.ts)
 LABEL_MODEL=claude-...   # optional; model for the label read (default: a faster tier, claude-haiku-4-5)
 FORM_MODEL=claude-...    # optional; model for the form read (default: MODEL / claude-sonnet-4-6)

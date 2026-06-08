@@ -1,8 +1,27 @@
 import pg from "pg";
+import { readFileSync } from "fs";
+
+/**
+ * TLS for the DB connection, by PGSSLMODE:
+ *  - unset / "disable": no TLS (the Render same-region internal URL needs none).
+ *  - "no-verify": encrypt but DON'T validate the server cert — an explicit
+ *    dev / self-signed escape hatch ONLY (it's MITM-able, so opt in knowingly).
+ *  - anything else ("require" / "verify-full" / …): VALIDATE the server cert,
+ *    trusting PGSSLROOTCERT's CA bundle if given, else the system trust store.
+ * Validating is the secure default; encrypting-without-validating used to be the
+ * "require" behavior, which defeats the point of requiring TLS.
+ */
+function dbSsl(): pg.PoolConfig["ssl"] {
+    const mode = process.env.PGSSLMODE;
+    if (!mode || mode === "disable") return undefined;
+    if (mode === "no-verify") return { rejectUnauthorized: false };
+    const ca = process.env.PGSSLROOTCERT;
+    return { rejectUnauthorized: true, ...(ca ? { ca: readFileSync(ca, "utf8") } : {}) };
+}
 
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined,
+    ssl: dbSsl(),
 });
 
 /**
