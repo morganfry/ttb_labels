@@ -9,7 +9,7 @@ context/
 .~lock.*#
 # Local sample inputs are versioned via Git LFS (see .gitattributes). Lone
 # exception: the 163 MB source PDF archive stays out of git entirely.
-test-pdfs/*.zip
+test-form-pdfs/*.zip
 
 # Local self-signed dev TLS cert (for --experimental-https on machines where
 # mkcert's CA install is blocked) — never commit the private key.

@@ -30,8 +30,8 @@ image affixed at the bottom. Options:
 ## Running a smoke test
 
 curl -F 'pairs=[{"id":"1","name":"clean-pass.pdf"}]' \
--F 'label_1=@test-pdfs/clean-pass.pdf' \
--F 'form_1=@test-pdfs/clean-pass.pdf' \
+-F 'label_1=@test-form-pdfs/clean-pass.pdf' \
+-F 'form_1=@test-form-pdfs/clean-pass.pdf' \
 http://localhost:3000/api/verify
 
            Expect an NDJSON stream; the `result` line's `overall` should match the
