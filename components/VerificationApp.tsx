@@ -120,6 +120,11 @@ export default function VerificationApp() {
     const handleStreamLine = (evt: any) => {
         if (evt.type === "result") {
             dispatch({ type: "result", id: evt.id, ok: evt.ok, result: evt.result, error: evt.error, latencyMs: evt.latencyMs, timings: evt.timings });
+        } else if (evt.type === "error") {
+            // The server hit a fatal error after the stream opened. Surface it and
+            // revert still-"processing" rows to queued — otherwise they stick in
+            // "processing" forever (runDone only flips the processing flag).
+            dispatch({ type: "runError", message: evt.message || "Processing failed on the server." });
         }
     };
 

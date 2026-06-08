@@ -24,6 +24,30 @@ sql.query = (text: string, values?: unknown[]) => pool.query(text, values);
 
 export { sql };
 
+/** Query bound to one transaction's client. */
+export type TxQuery = (text: string, values?: unknown[]) => Promise<pg.QueryResult>;
+
+/**
+ * Run `fn` inside a single transaction on ONE dedicated client. The plain `sql`
+ * helper goes through `pool.query`, which can grab a different pooled connection
+ * per call — useless for a transaction — so callers that need atomicity use this.
+ * Commits on success, rolls back on any throw, and always releases the client.
+ */
+export async function transaction<T>(fn: (q: TxQuery) => Promise<T>): Promise<T> {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        const result = await fn((text, values) => client.query(text, values));
+        await client.query("COMMIT");
+        return result;
+    } catch (e) {
+        try { await client.query("ROLLBACK"); } catch { /* ignore: surface the original error */ }
+        throw e;
+    } finally {
+        client.release();
+    }
+}
+
 let migrated = false;
 
 export async function migrate(): Promise<void> {

@@ -225,6 +225,10 @@ export default function CsvVerify() {
                 result: evt.ok ? evt.result : null, error: evt.ok ? null : evt.error,
                 latencyMs: evt.latencyMs, timings: evt.timings,
             } });
+        } else if (evt.type === "error") {
+            // Fatal server error after the stream opened — surface it instead of
+            // silently dropping the event (which left the run with no explanation).
+            dispatch({ type: "runError", message: evt.message || "Processing failed on the server." });
         }
     };
 
