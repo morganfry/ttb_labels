@@ -23,6 +23,7 @@ type State = { items: Item[]; processing: boolean; processError: string | null; 
 type Action =
     | { type: "add"; items: Item[] }
     | { type: "notice"; message: string | null }
+    | { type: "buffered"; id: string; bytes: Blob }
     | { type: "remove"; id: string }
     | { type: "reset" }
     | { type: "runStart"; ids: string[] }
@@ -36,6 +37,8 @@ function reducer(s: State, a: Action): State {
             return { ...s, items: [...s.items, ...a.items] };
         case "notice":
             return { ...s, notice: a.message };
+        case "buffered":
+            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, bytes: a.bytes, status: "queued" } : x) };
         case "remove":
             return { ...s, items: s.items.filter((x) => x.id !== a.id) };
         case "reset":
@@ -59,17 +62,34 @@ export default function VerificationApp() {
     const { items, processing, processError, notice } = state;
     useRegisterProcessing(processing); // warn on navigation while a run is active
 
-    // Add applications (PDFs and/or images) as work items, queued for the run.
-    // `fromZip` tags those that came out of an archive (display only). The server
-    // verifies every queued item directly; the confidence-gated matcher is the
-    // guarantee, so there is no client pre-flight gate.
+    // Add applications (PDFs and/or images) as work items. `fromZip` tags those
+    // that came out of an archive (display only). The server verifies every
+    // queued item directly; the confidence-gated matcher is the guarantee, so
+    // there is no client pre-flight gate.
+    //
+    // CHROME LARGE-UPLOAD FIX: read each file's bytes NOW, at intake, while its
+    // on-disk snapshot is fresh, and hold them in memory — then upload those
+    // bytes (see runVerification). Holding only the File and reading it lazily at
+    // submit fails on managed devices: a sync daemon touching the file in between
+    // drifts its snapshot, and Chrome then rejects the read with NOT_FOUND ("a
+    // requested file or directory could not be found"). Reading at intake closes
+    // that window; a genuinely unreadable file is reported now, not mid-run.
     const addDocs = useCallback((files: File[], fromZip: string | null) => {
         const incoming: Item[] = files.map((f) => ({
             id: uid(), name: f.name, kind: isPdf(f.name) ? "pdf" : "image", fromZip,
-            status: "queued", result: null, file: f,
+            status: "reading", result: null, file: f,
         }));
         if (!incoming.length) return;
         dispatch({ type: "add", items: incoming });
+        for (const it of incoming) {
+            it.file!.arrayBuffer().then(
+                (buf) => dispatch({ type: "buffered", id: it.id, bytes: new Blob([buf], { type: it.file!.type || "application/pdf" }) }),
+                () => {
+                    dispatch({ type: "remove", id: it.id });
+                    dispatch({ type: "notice", message: `Couldn't read "${it.name}". If it's on a cloud or network drive, copy it to a local folder and add it again.` });
+                },
+            );
+        }
     }, []);
 
     // Expand a dropped ZIP in the browser; its PDFs/images join the same pipeline.
@@ -128,28 +148,20 @@ export default function VerificationApp() {
         if (pending.length === 0) return;
         dispatch({ type: "runStart", ids: pending.map((it) => it.id) });
 
-        try {
-            const body = new FormData();
-            body.append("pairs", JSON.stringify(pending.map((it) => ({ id: it.id, name: it.name }))));
-            // CHROME LARGE-UPLOAD FIX: read each file into memory and upload the
-            // bytes, instead of appending the disk-backed File and letting the
-            // browser stream it lazily during the POST. On managed devices a large
-            // file is often cloud-/network-backed (OneDrive Files-On-Demand, a
-            // network home dir); Chrome's lazy UPLOAD_DATA_STREAM_READ then fails
-            // at byte 0, sends RST_STREAM(INTERNAL_ERROR), and the POST dies with
-            // net::ERR_FAILED — while Firefox and curl succeed because they buffer
-            // the file first. Buffering here makes Chrome send from memory the same
-            // way. (Diagnosed from a chrome://net-export capture.) One combined
-            // document per item serves as both form and label regions, so its
-            // bytes are uploaded once and the server reuses them for both.
-            // Tradeoff: this holds every pending file's bytes in memory at once
-            // rather than streaming lazily. Fine for a handful; for a 200-300 file
-            // bulk run, switch to per-file (or chunked) uploads instead.
-            for (const it of pending) {
-                const buf = await it.file!.arrayBuffer();
-                body.append(`file_${it.id}`, new Blob([buf], { type: it.file!.type || "application/pdf" }), it.name);
-            }
+        const body = new FormData();
+        body.append("pairs", JSON.stringify(pending.map((it) => ({ id: it.id, name: it.name }))));
+        // Upload the bytes captured at intake (see addDocs), not the File — this
+        // is the Chrome large-upload fix: the browser sends from memory, never
+        // re-reading a file whose on-disk snapshot may have drifted since drop.
+        // One combined document per item is both form and label regions, so its
+        // bytes are uploaded once and the server reuses them for both.
+        // Tradeoff: buffered files live in memory until the run; fine for a
+        // handful, but a 200-300 file bulk run wants per-file (or chunked) uploads.
+        for (const it of pending) {
+            body.append(`file_${it.id}`, it.bytes!, it.name);
+        }
 
+        try {
             const res = await fetch("/api/verify", { method: "POST", body });
             if (!res.ok || !res.body) {
                 const msg = await res.text().catch(() => "");
@@ -181,6 +193,7 @@ export default function VerificationApp() {
 
     const docItems = items.filter((it) => it.kind === "pdf" || it.kind === "image");
     const queuedCount = docItems.filter((it) => it.status === "queued").length;
+    const readingCount = docItems.filter((it) => it.status === "reading").length;
     const doneCount = docItems.filter((it) => it.status === "done").length;
     const hasResults = doneCount > 0;
     const allDone = docItems.length > 0 && doneCount === docItems.length;
@@ -226,10 +239,10 @@ export default function VerificationApp() {
                                 </div>
                             </div>
                         ) : (
-                            <button onClick={runVerification} disabled={queuedCount === 0}
+                            <button onClick={runVerification} disabled={queuedCount === 0 || readingCount > 0}
                                     className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-blue-600 px-6 py-5 text-xl font-bold text-white shadow-md shadow-blue-600/25 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none">
                                 <CheckCircle2 size={24} />
-                                {hasResults ? "Process remaining" : `Process ${queuedCount} ${queuedCount === 1 ? "application" : "applications"}`}
+                                {readingCount > 0 ? "Reading files…" : hasResults ? "Process remaining" : `Process ${queuedCount} ${queuedCount === 1 ? "application" : "applications"}`}
                             </button>
                         )}
                     </div>

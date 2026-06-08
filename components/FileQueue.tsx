@@ -29,6 +29,7 @@ function FileRow({ item, onRemove, disabled }:
     const Icon = FileText;
 
     const stateText: Record<string, React.ReactNode> = {
+        reading:      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-blue-600"><Loader2 size={14} className="animate-spin" /> Loading…</span>,
         queued:       <span className="whitespace-nowrap text-xs font-medium text-green-700">Ready</span>,
         processing:   <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-blue-600"><Loader2 size={14} className="animate-spin" /> Reading…</span>,
     };

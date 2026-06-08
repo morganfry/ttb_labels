@@ -5,6 +5,8 @@ import type { ItemTimings } from "./orchestration";
 export type Item = {
     id: string; name: string; kind: "pdf" | "image" | "csv"; fromZip: string | null;
     status: string; result: any; error?: any; file?: File;
+    /** File bytes captured in memory at intake, uploaded as-is (see addDocs). */
+    bytes?: Blob;
     /** End-to-end processing time and per-stage breakdown, from the stream. */
     latencyMs?: number; timings?: ItemTimings;
 };
