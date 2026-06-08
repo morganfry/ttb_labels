@@ -4,31 +4,24 @@ import { useRef, useReducer, useMemo, useState, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Images, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { OVERALL_META, isZip, isImage } from "@/lib/uiTypes";
-import { config } from "@/lib/config";
+import { useClientConfig } from "./ClientConfigProvider";
 import { parseCsv, CSV_COLUMNS, IMAGE_REFS_COLUMN, type CsvRow } from "@/lib/csvParse";
-import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
+import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex, type ZipBudget } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
 import { ReviewHistoryLink } from "./ReviewHistoryLink";
 import { LatencySummary } from "./LatencySummary";
 import { useRegisterProcessing } from "./ProcessingGuard";
 
-/** Client-side guard on total uploaded image bytes (MB); the server enforces the
- *  authoritative cap. Covers loose images and ZIPs alike. */
-const IMAGES_MAX_MB = 100;
-
 /** Read the dropped image sources (ZIPs and/or loose image files) into one index
  *  for the preview cross-check. Rebuilt from the full set on every change so
  *  basename uniqueness stays correct as files are added or removed. */
-async function indexImageFiles(files: File[]): Promise<ZipImageIndex> {
+async function indexImageFiles(files: File[], budget: ZipBudget): Promise<ZipImageIndex> {
     const sources: RawImageSource[] = await Promise.all(files.map(async (f): Promise<RawImageSource> => {
         const bytes = new Uint8Array(await f.arrayBuffer());
         return isZip(f.name) ? { zip: bytes } : { name: f.name, bytes };
     }));
     // Same decompressed budget the server enforces, so a bomb can't hang the tab.
-    return indexImageSources(sources, {
-        maxEntryBytes: config.csvImageMaxBytes,
-        maxTotalBytes: config.csvImageZipMaxTotalBytes,
-    });
+    return indexImageSources(sources, budget);
 }
 
 /** A worked example shown on the page and offered as a downloadable template. */
@@ -137,6 +130,7 @@ function csvReducer(s: CsvState, a: CsvAction): CsvState {
 }
 
 export default function CsvVerify() {
+    const cfg = useClientConfig();
     const [state, dispatch] = useReducer(csvReducer, INITIAL_CSV);
     const { file, rows, parseError, imageFiles, imageIndex, imageError, items, total, done, processing, processError } = state;
     const [dragging, setDragging] = useState(false);
@@ -155,19 +149,19 @@ export default function CsvVerify() {
     const preview = useMemo<Preview | null>(() => (rows ? buildPreview(rows, imageIndex) : null), [rows, imageIndex]);
 
     const acceptFile = useCallback(async (f: File) => {
-        if (f.size > config.csvMaxBytes) {
-            dispatch({ type: "csvRejected", file: f, message: `CSV is larger than the ${Math.round(config.csvMaxBytes / (1024 * 1024))} MB limit; split it into smaller files.` });
+        if (f.size > cfg.csvMaxBytes) {
+            dispatch({ type: "csvRejected", file: f, message: `CSV is larger than the ${Math.round(cfg.csvMaxBytes / (1024 * 1024))} MB limit; split it into smaller files.` });
             return;
         }
         try {
             const text = await f.text();
-            const { rows, headerError } = parseCsv(text, config.csvMaxImagesPerRow, config.csvMaxRows);
+            const { rows, headerError } = parseCsv(text, cfg.csvMaxImagesPerRow, cfg.csvMaxRows);
             if (headerError) dispatch({ type: "csvRejected", file: f, message: headerError });
             else dispatch({ type: "csvAccepted", file: f, rows });
         } catch {
             dispatch({ type: "csvRejected", file: f, message: "Could not read the file as text." });
         }
-    }, []);
+    }, [cfg]);
 
     // Set the label-image uploads to `files` (ZIPs and/or loose images) and
     // rebuild the index from the whole set. Replacing rather than merging keeps
@@ -180,20 +174,20 @@ export default function CsvVerify() {
             return;
         }
         const totalBytes = files.reduce((n, f) => n + f.size, 0);
-        if (totalBytes > IMAGES_MAX_MB * 1024 * 1024) {
+        if (totalBytes > cfg.csvImageZipMaxBytes) {
             // Reject the whole set without touching the accepted one in flight.
-            dispatch({ type: "imagesError", message: `Uploaded images total more than the ${IMAGES_MAX_MB} MB limit.` });
+            dispatch({ type: "imagesError", message: `Uploaded images total more than the ${Math.round(cfg.csvImageZipMaxBytes / (1024 * 1024))} MB limit.` });
             return;
         }
         imageFilesRef.current = files;
         const reqId = ++reqIdRef.current;
         try {
-            const index = await indexImageFiles(files);
+            const index = await indexImageFiles(files, { maxEntryBytes: cfg.csvImageMaxBytes, maxTotalBytes: cfg.csvImageZipMaxTotalBytes });
             if (reqId === reqIdRef.current) dispatch({ type: "imagesSet", files, index });
         } catch {
             if (reqId === reqIdRef.current) dispatch({ type: "imagesError", message: "Couldn't read one of the uploaded archives as a ZIP." });
         }
-    }, []);
+    }, [cfg]);
 
     const onPick = (files: FileList | null) => {
         const f = files?.[0];

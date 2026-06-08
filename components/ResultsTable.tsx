@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item } from "@/lib/uiTypes";
 import { FIELD_LABELS, FIELD_ORDER, STATUS_META, formatLatency } from "@/lib/uiTypes";
-import { config } from "@/lib/config";
+import { useClientConfig } from "./ClientConfigProvider";
 import { OverallBadge } from "./StatusBadges";
 import { FieldCards } from "./FieldCards";
 
@@ -48,6 +48,7 @@ export function ResultsTable({ items }: { items: Item[] }) {
 
 function ResultRow({ it, byField, open, onToggle }:
                    { it: Item; byField: Record<string, any>; open: boolean; onToggle: () => void }) {
+    const { latencyTargetMs } = useClientConfig();
     return (
         <>
             <tr onClick={onToggle} tabIndex={0} aria-expanded={open}
@@ -58,7 +59,7 @@ function ResultRow({ it, byField, open, onToggle }:
                 </td>
                 <td className="whitespace-nowrap px-3.5 py-3 text-center"><OverallBadge overall={it.result.overall} small /></td>
                 <td className={`whitespace-nowrap px-3.5 py-3 text-center tabular-nums ${
-                    typeof it.latencyMs === "number" && it.latencyMs > config.latencyTargetMs ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                    typeof it.latencyMs === "number" && it.latencyMs > latencyTargetMs ? "font-semibold text-amber-700" : "text-slate-500"}`}>
                     {typeof it.latencyMs === "number" ? formatLatency(it.latencyMs) : "—"}
                 </td>
                 {FIELD_ORDER.map((f) => {
@@ -87,12 +88,13 @@ function ResultRow({ it, byField, open, onToggle }:
  *  concurrently, so the stages sum to more than the total — each isolates where
  *  the time went. */
 function TimingBreakdown({ timings, totalMs }: { timings: NonNullable<Item["timings"]>; totalMs?: number }) {
+    const { latencyTargetMs } = useClientConfig();
     const stages = STAGE_LABELS.filter(([k]) => typeof timings[k] === "number");
     return (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-4 py-2.5 text-xs text-slate-500">
             <span className="font-semibold text-slate-600">Timing</span>
             {typeof totalMs === "number" && (
-                <span className={totalMs > config.latencyTargetMs ? "font-semibold text-amber-700" : "font-medium text-slate-700"}>
+                <span className={totalMs > latencyTargetMs ? "font-semibold text-amber-700" : "font-medium text-slate-700"}>
                     {formatLatency(totalMs)} total
                 </span>
             )}

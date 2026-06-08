@@ -4,7 +4,7 @@ import { useReducer, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
 import { uid, isPdf, isImage, isZip, OVERALL_META } from "@/lib/uiTypes";
-import { config } from "@/lib/config";
+import { useClientConfig } from "./ClientConfigProvider";
 import { extractZipDocs } from "@/lib/zipDocs";
 import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
@@ -55,6 +55,7 @@ function reducer(s: State, a: Action): State {
 }
 
 export default function VerificationApp() {
+    const cfg = useClientConfig();
     const [state, dispatch] = useReducer(reducer, { items: [], processing: false, processError: null, notice: null });
     const { items, processing, processError, notice } = state;
     useRegisterProcessing(processing); // warn on navigation while a run is active
@@ -74,8 +75,8 @@ export default function VerificationApp() {
 
     // Expand a dropped ZIP in the browser; its PDFs/images join the same pipeline.
     const ingestZip = useCallback(async (file: File) => {
-        const limitMb = Math.round(config.pdfZipMaxBytes / (1024 * 1024));
-        if (file.size > config.pdfZipMaxBytes) {
+        const limitMb = Math.round(cfg.pdfZipMaxBytes / (1024 * 1024));
+        if (file.size > cfg.pdfZipMaxBytes) {
             dispatch({ type: "notice", message: `${file.name} is too large to expand (over ${limitMb} MB).` });
             return;
         }
@@ -84,8 +85,8 @@ export default function VerificationApp() {
         let result;
         try {
             result = extractZipDocs(new Uint8Array(await file.arrayBuffer()), {
-                maxEntryBytes: config.pdfZipMaxEntryBytes,
-                maxTotalBytes: config.pdfZipMaxTotalBytes,
+                maxEntryBytes: cfg.pdfZipMaxEntryBytes,
+                maxTotalBytes: cfg.pdfZipMaxTotalBytes,
             });
         } catch {
             dispatch({ type: "notice", message: `Couldn't read ${file.name} — not a valid ZIP.` });
@@ -103,7 +104,7 @@ export default function VerificationApp() {
         dispatch({ type: "notice", message: result.skipped.length
             ? `Added ${n} file${n === 1 ? "" : "s"} from ${file.name}; skipped ${result.skipped.length} oversized.`
             : null });
-    }, [addDocs]);
+    }, [addDocs, cfg]);
 
     const addFiles = useCallback((fileList: FileList) => {
         const docs: File[] = [];

@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock } from "lucide-react";
-import { config } from "@/lib/config";
+import { useClientConfig } from "./ClientConfigProvider";
 import { formatLatency, type Item } from "@/lib/uiTypes";
 
 /**
@@ -11,7 +11,6 @@ import { formatLatency, type Item } from "@/lib/uiTypes";
  * target — turning the requirement into something the agent can actually see and
  * the evaluator can verify, rather than an unstated hope.
  */
-const TARGET = config.latencyTargetMs;
 
 /** Nearest-rank percentile on an already-ascending array. */
 function percentile(sortedAsc: number[], p: number): number {
@@ -21,6 +20,7 @@ function percentile(sortedAsc: number[], p: number): number {
 }
 
 export function LatencySummary({ items }: { items: Item[] }) {
+    const TARGET = useClientConfig().latencyTargetMs;
     const times = items
         .map((it) => it.latencyMs)
         .filter((n): n is number => typeof n === "number")
