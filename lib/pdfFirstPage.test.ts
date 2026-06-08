@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { extractFirstPage, extractLabelArtwork } from "./pdfFirstPage";
+import { extractFirstPage, extractLabelArtwork, sliceApplicationPdf } from "./pdfFirstPage";
 
 // Smallest valid 1x1 PNG, used to give a page a real image XObject.
 const PNG_1x1 = Uint8Array.from(
@@ -73,5 +73,20 @@ describe("extractLabelArtwork", () => {
         const r = await extractLabelArtwork(garbage);
         expect(r.sliced).toBe(false);
         expect(r.bytes).toBe(garbage);
+    });
+});
+
+describe("sliceApplicationPdf", () => {
+    it("slices both regions from a single parse", async () => {
+        const pdf = await makePdf(4, [2, 3]); // artwork on the last two pages
+        const r = await sliceApplicationPdf(pdf);
+        expect(r.originalPageCount).toBe(4);
+        expect(await pageCountOf(r.formBytes)).toBe(1);   // form = page 1 only
+        expect(r.label.sliced).toBe(true);
+        expect(r.label.usedPages).toEqual([2, 3]);        // label = artwork pages
+    });
+
+    it("throws on a PDF that can't be read (form region is a hard guarantee)", async () => {
+        await expect(sliceApplicationPdf(new TextEncoder().encode("not a pdf"))).rejects.toThrow();
     });
 });

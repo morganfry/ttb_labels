@@ -7,7 +7,7 @@
  * and importers submit 200-300 at once (so a concurrency cap prevents
  * opening hundreds of simultaneous model calls).
  */
-import { extractFirstPage, extractLabelArtwork, toBase64 } from "./pdfFirstPage";
+import { sliceApplicationPdf, toBase64 } from "./pdfFirstPage";
 import { parseLabel, parseForm, type FormExtraction } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError, type ExtractionInput, type MediaType } from "./extraction";
@@ -180,13 +180,18 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     const mediaType: MediaType = item.mediaType ?? "application/pdf";
     if (mediaType === "application/pdf") {
         const prepStart = Date.now();
-        // Hard guard: only page 1 (Part I) of the form reaches the model.
-        let formBytes: Uint8Array;
-        try { formBytes = (await extractFirstPage(item.formPdf)).bytes; }
-        catch (e) { return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false }); }
-        // Only the artwork pages — fewer image tokens, lower latency. Never
-        // throws; falls back to the whole PDF.
-        const labelBytes = (await extractLabelArtwork(item.labelPdf)).bytes;
+        // Slice both regions from ONE parse of the combined document (labelPdf and
+        // formPdf are the same bytes for a PDF item). The form is hard-guarded to
+        // page 1 (Part I); the label keeps only the artwork pages, falling back to
+        // the whole PDF if none are detected.
+        let formBytes: Uint8Array, labelBytes: Uint8Array;
+        try {
+            const sliced = await sliceApplicationPdf(item.formPdf);
+            formBytes = sliced.formBytes;
+            labelBytes = sliced.label.bytes;
+        } catch (e) {
+            return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false });
+        }
         timings.prepMs = Date.now() - prepStart;
         formInput = { base64: toBase64(formBytes), mediaType: "application/pdf" };
         labelInput = { base64: toBase64(labelBytes), mediaType: "application/pdf" };

@@ -25,12 +25,15 @@ export async function extractFirstPage(pdfBytes: Uint8Array): Promise<FirstPageR
     const src = await PDFDocument.load(pdfBytes);
     const originalPageCount = src.getPageCount();
     if (originalPageCount === 0) throw new Error("Uploaded PDF has no pages.");
+    return { bytes: await firstPageBytes(src), originalPageCount };
+}
 
+/** Page-1-only PDF bytes from an already-loaded document (the form region). */
+async function firstPageBytes(src: PDFDocument): Promise<Uint8Array> {
     const out = await PDFDocument.create();
     const [page0] = await out.copyPages(src, [0]);
     out.addPage(page0);
-    const bytes = await out.save();
-    return { bytes, originalPageCount };
+    return out.save();
 }
 
 export interface LabelArtworkResult {
@@ -58,14 +61,28 @@ export interface LabelArtworkResult {
  *    must never break the label read.
  */
 export async function extractLabelArtwork(pdfBytes: Uint8Array): Promise<LabelArtworkResult> {
-    const whole = (originalPageCount: number): LabelArtworkResult => ({
-        bytes: pdfBytes, originalPageCount,
-        usedPages: Array.from({ length: originalPageCount }, (_, i) => i), sliced: false,
-    });
     try {
         const src = await PDFDocument.load(pdfBytes);
-        const pageCount = src.getPageCount();
-        if (pageCount <= 1) return whole(pageCount);
+        return await labelArtworkBytes(src, pdfBytes, src.getPageCount());
+    } catch {
+        // Unreadable input — pass the original bytes through (never break the read).
+        return { bytes: pdfBytes, originalPageCount: 0, usedPages: [], sliced: false };
+    }
+}
+
+/**
+ * Artwork-pages result from an already-loaded document, conservative with a
+ * whole-PDF fallback. Returns the original `pdfBytes` unchanged (same reference)
+ * when slicing buys nothing or page detection fails, so it never breaks the
+ * label read.
+ */
+async function labelArtworkBytes(src: PDFDocument, pdfBytes: Uint8Array, pageCount: number): Promise<LabelArtworkResult> {
+    const whole = (): LabelArtworkResult => ({
+        bytes: pdfBytes, originalPageCount: pageCount,
+        usedPages: Array.from({ length: pageCount }, (_, i) => i), sliced: false,
+    });
+    try {
+        if (pageCount <= 1) return whole();
 
         const imagePages = src.getPages()
             .map((page, i) => (pageHasImage(page) ? i : -1))
@@ -73,7 +90,7 @@ export async function extractLabelArtwork(pdfBytes: Uint8Array): Promise<LabelAr
 
         // Nothing detected (vector art, scan we can't read, Form-XObject nesting)
         // → safe fallback. Every page qualifies → slicing buys nothing.
-        if (imagePages.length === 0 || imagePages.length === pageCount) return whole(pageCount);
+        if (imagePages.length === 0 || imagePages.length === pageCount) return whole();
 
         const out = await PDFDocument.create();
         const copied = await out.copyPages(src, imagePages);
@@ -81,8 +98,34 @@ export async function extractLabelArtwork(pdfBytes: Uint8Array): Promise<LabelAr
         const bytes = await out.save();
         return { bytes, originalPageCount: pageCount, usedPages: imagePages, sliced: true };
     } catch {
-        return whole(0);
+        return whole();
     }
+}
+
+export interface SlicedApplication {
+    /** Page-1-only PDF for the form parser. */
+    formBytes: Uint8Array;
+    /** Artwork-pages result for the label parser (or the whole-PDF fallback). */
+    label: LabelArtworkResult;
+    originalPageCount: number;
+}
+
+/**
+ * Slice a combined application PDF for BOTH parsers from a SINGLE parse — the
+ * form (page 1) and the label (artwork pages). processOne uses this for PDF
+ * items, where the same bytes feed both regions, so parsing once (instead of
+ * extractFirstPage + extractLabelArtwork, which each load the PDF) drops a full
+ * redundant parse from the per-item critical path. Throws only when the PDF
+ * can't be loaded or has no pages — the form region is a hard guarantee; the
+ * label region keeps its conservative whole-PDF fallback.
+ */
+export async function sliceApplicationPdf(pdfBytes: Uint8Array): Promise<SlicedApplication> {
+    const src = await PDFDocument.load(pdfBytes);
+    const originalPageCount = src.getPageCount();
+    if (originalPageCount === 0) throw new Error("Uploaded PDF has no pages.");
+    const formBytes = await firstPageBytes(src);
+    const label = await labelArtworkBytes(src, pdfBytes, originalPageCount);
+    return { formBytes, label, originalPageCount };
 }
 
 /** True if the page's resources reference at least one image XObject. */
