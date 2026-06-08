@@ -28,6 +28,11 @@ export const config = {
     concurrency: intFromEnv("BATCH_CONCURRENCY", 6),
     pageSize: 25,
     temperature: 0,
+    /* Per-label latency target (ms). The compliance team's hard bar from the
+     * discovery interviews ("if we can't get results back in about 5 seconds,
+     * nobody's going to use it"). Purely a display benchmark — it colors the
+     * measured per-item timing in the UI; it changes no verdict. */
+    latencyTargetMs: intFromEnv("LATENCY_TARGET_MS", 5000),
     /* CSV bulk path: label images come from per-row URLs or an uploaded ZIP of
      * local files. These bound that intake so one bad row (or archive) can't
      * stall or balloon a batch. */

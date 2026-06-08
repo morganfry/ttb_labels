@@ -46,6 +46,21 @@ describe("end-to-end pipeline (stubbed parsers)", () => {
         });
     }
 
+    it("records a per-stage timing breakdown on each outcome", async () => {
+        const item: WorkItem = { id: "1", name: "clean", labelPdf: MINIMAL_PDF, formPdf: MINIMAL_PDF };
+        const outcomes: ItemOutcome[] = [];
+        await processBatch([item], {
+            onResult: (o) => outcomes.push(o),
+            parsers: stubParsers(SCENARIOS[0].label, SCENARIOS[0].form),
+        });
+        const o = outcomes[0];
+        expect(typeof o.latencyMs).toBe("number");
+        // The PDF path slices, reads both sides, and matches — each stage timed.
+        for (const k of ["prepMs", "labelMs", "formMs", "matchMs"] as const) {
+            expect(typeof o.timings[k]).toBe("number");
+        }
+    });
+
     it("streams one result per item and reports an accurate summary", async () => {
         const items: WorkItem[] = SCENARIOS.map((s, i) => ({
             id: String(i), name: s.name, labelPdf: MINIMAL_PDF, formPdf: MINIMAL_PDF,

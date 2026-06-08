@@ -8,6 +8,7 @@ import { parseCsv, isLocalImageRef, CSV_COLUMNS, IMAGE_URLS_COLUMN, type CsvRow 
 import { indexImageSources, zipHasImage, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
 import { ResultsTable } from "./ResultsTable";
 import { ReviewHistoryLink } from "./ReviewHistoryLink";
+import { LatencySummary } from "./LatencySummary";
 import { useRegisterProcessing } from "./ProcessingGuard";
 
 /** Client-side guard on total uploaded image bytes (MB); the server enforces the
@@ -224,6 +225,7 @@ export default function CsvVerify() {
             dispatch({ type: "streamResult", item: {
                 id: evt.id, name: evt.name, kind: "csv", fromZip: null, status: "done",
                 result: evt.ok ? evt.result : null, error: evt.ok ? null : evt.error,
+                latencyMs: evt.latencyMs, timings: evt.timings,
             } });
         }
     };
@@ -432,12 +434,15 @@ export default function CsvVerify() {
             )}
 
             {allDone && (
-                <div className="mb-4 flex flex-wrap gap-2.5">
-                    {Object.entries(OVERALL_META).map(([k, meta]) => (
-                        <div key={k} className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm ${meta.chipBg} ${meta.chipText}`}>
-                            <meta.Icon size={18} /> <strong>{summary[k] || 0}</strong> {meta.label}
-                        </div>
-                    ))}
+                <div className="mb-4 flex flex-col gap-2.5">
+                    <div className="flex flex-wrap gap-2.5">
+                        {Object.entries(OVERALL_META).map(([k, meta]) => (
+                            <div key={k} className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm ${meta.chipBg} ${meta.chipText}`}>
+                                <meta.Icon size={18} /> <strong>{summary[k] || 0}</strong> {meta.label}
+                            </div>
+                        ))}
+                    </div>
+                    {resultItems.length > 0 && <LatencySummary items={resultItems} />}
                 </div>
             )}
 

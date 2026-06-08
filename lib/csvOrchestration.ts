@@ -10,7 +10,7 @@
  * extraction, no PDF slicing) while the label side is still model-read from the
  * fetched images.
  */
-import { runPool, type ItemOutcome, type BatchErrorInfo, type BatchSummary, type PoolOptions } from "./orchestration";
+import { runPool, type ItemOutcome, type ItemTimings, type BatchErrorInfo, type BatchSummary, type PoolOptions } from "./orchestration";
 import { resolveLabelImages, ImageFetchError } from "./imageFetch";
 import { parseLabel } from "./parsers";
 import { verify } from "./matching";
@@ -60,7 +60,8 @@ function csvAppConfidence(): Partial<Record<keyof ApplicationData, Confidence>> 
 
 async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<ItemOutcome> {
     const start = Date.now();
-    const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start });
+    const timings: ItemTimings = {};
+    const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start, timings });
 
     // A row that failed CSV validation arrives pre-failed — surface it as-is.
     if (item.preError) return fail(item.preError);
@@ -69,26 +70,32 @@ async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<
     const label = opts.parseLabel ?? parseLabel;
 
     let inputs;
+    const fetchStart = Date.now();
     try {
         inputs = await resolveImages(item.imageRefs, opts.zipImages);
     } catch (e) {
         const retryable = e instanceof ImageFetchError && /timed out|\b5\d\d\b/i.test(e.message);
         return fail({ kind: "extraction", stage: "label", message: `Image fetch failed: ${msg(e)}`, retryable });
     }
+    timings.fetchMs = Date.now() - fetchStart;
 
     let labelRes;
+    const labelStart = Date.now();
     try {
         labelRes = await label(inputs, opts.labelModel ?? opts.model ?? config.labelModel);
     } catch (e) {
         return fail(classifyExtraction(e));
     }
+    timings.labelMs = Date.now() - labelStart;
 
     let result: VerificationResult;
+    const matchStart = Date.now();
     try {
         result = verify(labelRes.data, item.app, csvAppConfidence());
     } catch (e) {
         return fail({ kind: "matching", stage: "match", message: `Matching failed: ${msg(e)}`, retryable: false });
     }
+    timings.matchMs = Date.now() - matchStart;
 
     // Persistence is non-fatal (same policy as the PDF path): a lost DB write
     // must not discard a verdict the agent is already viewing.
@@ -97,7 +104,7 @@ async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<
         catch (e) { console.error(`Persist failed for ${item.name}:`, msg(e)); }
     }
 
-    return { id: item.id, name: item.name, ok: true, result, latencyMs: Date.now() - start };
+    return { id: item.id, name: item.name, ok: true, result, latencyMs: Date.now() - start, timings };
 }
 
 /** Map a label-extraction failure to a batch error, marking transient kinds retryable. */

@@ -15,6 +15,7 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 - **Field extraction** — a vision language model transcribes the label fields and the form's Part I fields, each with a per-field confidence rating.
 - **Verification** — deterministic matching checks each field with the logic appropriate to it: tolerant matching for names, numeric tolerance for alcohol content and net contents, strict exact matching for the government warning.
 - **Streaming results** — applications process concurrently and results stream back per-item, filling a color-coded table (green / amber / red per field) as each finishes. A summary strip tallies passed / needs-review / failed.
+- **Latency measurement** — each result carries its end-to-end processing time and a per-stage breakdown (slice / image fetch / label read / form read / match). The table shows per-item time (flagged when it exceeds the target), the row detail shows the breakdown, and a run rollup reports median / p95 and how many items cleared the ≈5-second target (`LATENCY_TARGET_MS`, default 5000) — making the compliance team's hard latency bar visible and verifiable.
 - **Result detail** — clicking any result expands a per-field breakdown showing the extracted value and the specific reason for any flag.
 - **Searchable history** — every verdict is persisted. A search screen filters past reviews by serial number, brand (partial), outcome, product type, and date range, with pagination and on-demand detail.
 - **Two-screen navigation** — a top nav links the Verify and Review History screens.
@@ -220,6 +221,7 @@ MODEL=claude-...         # optional; general/default model (default in lib/confi
 LABEL_MODEL=claude-...   # optional; model for the label read (default: a faster tier, claude-haiku-4-5)
 FORM_MODEL=claude-...    # optional; model for the form read (default: MODEL / claude-sonnet-4-6)
 BATCH_CONCURRENCY=6      # optional concurrency override
+LATENCY_TARGET_MS=5000   # optional; per-label latency target the UI flags against (default 5s)
 CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for CSV labels (URL or ZIP; default 12 MiB)
 CSV_IMAGE_FETCH_TIMEOUT_MS=15000 # optional; per-image fetch timeout for the CSV URL path
 CSV_MAX_IMAGES_PER_ROW=6         # optional; max label image references per CSV row

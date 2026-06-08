@@ -31,11 +31,33 @@ export interface WorkItem {
     mediaType?: MediaType;
 }
 
+/**
+ * Per-stage wall-clock breakdown of one item's pipeline, in ms. Every field is
+ * optional because the two paths run different stages (the PDF path slices and
+ * reads a form; the CSV path fetches images and has no form read) and a failure
+ * only fills the stages that ran. The sum won't equal latencyMs — label/form
+ * run concurrently — but each number isolates where the time went, which is how
+ * the ~5s expectation gets diagnosed (the form vision read is the usual driver).
+ */
+export interface ItemTimings {
+    /** PDF slicing — form page + artwork pages (PDF path only). */
+    prepMs?: number;
+    /** Resolving label images: URL fetch and/or ZIP read (CSV path only). */
+    fetchMs?: number;
+    /** Label vision read. */
+    labelMs?: number;
+    /** Form vision read (PDF path only). */
+    formMs?: number;
+    /** Deterministic matching. */
+    matchMs?: number;
+}
+
 /** Discriminated union — success carries the verdict, failure carries a
- *  classified error. One bad item never aborts the batch. */
+ *  classified error. One bad item never aborts the batch. Both carry the total
+ *  latency and the per-stage breakdown so the UI can show (and prove) timing. */
 export type ItemOutcome =
-    | { id: string; name: string; ok: true; result: VerificationResult; latencyMs: number }
-    | { id: string; name: string; ok: false; error: BatchErrorInfo; latencyMs: number };
+    | { id: string; name: string; ok: true; result: VerificationResult; latencyMs: number; timings: ItemTimings }
+    | { id: string; name: string; ok: false; error: BatchErrorInfo; latencyMs: number; timings: ItemTimings };
 
 export interface BatchErrorInfo {
     kind: "extraction" | "matching" | "unknown";
@@ -147,7 +169,8 @@ export async function runPool<T>(
  */
 async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutcome> {
     const start = Date.now();
-    const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start });
+    const timings: ItemTimings = {};
+    const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start, timings });
 
     // Resolve each parser's input. PDFs are sliced (page 1 → form, artwork pages
     // → label) so the model never sees boilerplate pages. A flat image can't be
@@ -156,6 +179,7 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     let labelInput: ExtractionInput, formInput: ExtractionInput;
     const mediaType: MediaType = item.mediaType ?? "application/pdf";
     if (mediaType === "application/pdf") {
+        const prepStart = Date.now();
         // Hard guard: only page 1 (Part I) of the form reaches the model.
         let formBytes: Uint8Array;
         try { formBytes = (await extractFirstPage(item.formPdf)).bytes; }
@@ -163,6 +187,7 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
         // Only the artwork pages — fewer image tokens, lower latency. Never
         // throws; falls back to the whole PDF.
         const labelBytes = (await extractLabelArtwork(item.labelPdf)).bytes;
+        timings.prepMs = Date.now() - prepStart;
         formInput = { base64: toBase64(formBytes), mediaType: "application/pdf" };
         labelInput = { base64: toBase64(labelBytes), mediaType: "application/pdf" };
     } else {
@@ -173,14 +198,16 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
 
     // Parsers are injectable (default: real model-backed). Label and form are
     // independent calls — run concurrently to roughly halve per-item latency,
-    // each on its own model (label defaults to a faster tier; see config).
+    // each on its own model (label defaults to a faster tier; see config). Each
+    // side is timed independently (finally, so a rejection still records its
+    // duration) to expose which read drives the per-item latency.
     const label = opts.parsers?.parseLabel ?? parseLabel;
     const form = opts.parsers?.parseForm ?? parseForm;
     const labelModel = opts.labelModel ?? opts.model ?? config.labelModel;
     const formModel = opts.formModel ?? opts.model ?? config.formModel;
     const [labelRes, formRes] = await Promise.allSettled([
-        label(labelInput, labelModel),
-        form(formInput, formModel),
+        (async () => { const s = Date.now(); try { return await label(labelInput, labelModel); } finally { timings.labelMs = Date.now() - s; } })(),
+        (async () => { const s = Date.now(); try { return await form(formInput, formModel); } finally { timings.formMs = Date.now() - s; } })(),
     ]);
 
     if (labelRes.status === "rejected") return fail(classifyExtraction(labelRes.reason, "label"));
@@ -189,8 +216,10 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     const { app, appConfidence } = toApplicationData(formRes.value.data);
 
     let result: VerificationResult;
+    const matchStart = Date.now();
     try { result = verify(labelRes.value.data, app, appConfidence); }
     catch (e) { return fail({ kind: "matching", stage: "match", message: `Matching failed: ${msg(e)}`, retryable: false }); }
+    timings.matchMs = Date.now() - matchStart;
 
     // Persistence is non-fatal: losing a DB write is bad, but discarding a
     // verdict the agent is already viewing is worse. Log and continue.
@@ -199,7 +228,7 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
         catch (e) { console.error(`Persist failed for ${item.name}:`, msg(e)); }
     }
 
-    return { id: item.id, name: item.name, ok: true, result, latencyMs: Date.now() - start };
+    return { id: item.id, name: item.name, ok: true, result, latencyMs: Date.now() - start, timings };
 }
 
 /**

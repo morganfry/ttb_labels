@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, Eye } from "lucide-react";
+import type { ItemTimings } from "./orchestration";
 
 type Detection = {
     hasForm: boolean; formConfidence: "high" | "low";
@@ -10,7 +11,14 @@ type Detection = {
 export type Item = {
     id: string; name: string; kind: "pdf" | "image" | "csv"; fromZip: string | null;
     status: string; result: any; error?: any; file?: File; detection?: Detection | null;
+    /** End-to-end processing time and per-stage breakdown, from the stream. */
+    latencyMs?: number; timings?: ItemTimings;
 };
+
+/** Compact human duration: "840 ms" under a second, "3.2s" above. */
+export function formatLatency(ms: number): string {
+    return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)}s`;
+}
 
 export const FIELD_LABELS: Record<string, string> = {
     brandName: "Brand name",

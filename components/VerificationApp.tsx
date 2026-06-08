@@ -11,6 +11,7 @@ import { Dropzone } from "./Dropzone";
 import { FileQueue } from "./FileQueue";
 import { ResultsTable } from "./ResultsTable";
 import { ReviewHistoryLink } from "./ReviewHistoryLink";
+import { LatencySummary } from "./LatencySummary";
 import { useRegisterProcessing } from "./ProcessingGuard";
 
 /**
@@ -28,7 +29,7 @@ type Action =
     | { type: "override"; id: string }
     | { type: "reset" }
     | { type: "runStart"; ids: string[] }
-    | { type: "result"; id: string; ok: boolean; result: unknown; error: unknown }
+    | { type: "result"; id: string; ok: boolean; result: unknown; error: unknown; latencyMs?: number; timings?: Item["timings"] }
     | { type: "runError"; message: string }
     | { type: "runDone" };
 
@@ -51,7 +52,7 @@ function reducer(s: State, a: Action): State {
             return { ...s, processing: true, processError: null, items: s.items.map((x) => ids.has(x.id) ? { ...x, status: "processing" } : x) };
         }
         case "result":
-            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, status: "done", result: a.ok ? a.result : null, error: a.ok ? null : a.error } : x) };
+            return { ...s, items: s.items.map((x) => x.id === a.id ? { ...x, status: "done", result: a.ok ? a.result : null, error: a.ok ? null : a.error, latencyMs: a.latencyMs, timings: a.timings } : x) };
         case "runError":
             // Revert any still-processing rows to queued so they can be retried.
             return { ...s, processError: a.message, items: s.items.map((x) => x.status === "processing" ? { ...x, status: "queued" } : x) };
@@ -133,7 +134,7 @@ export default function VerificationApp() {
 
     const handleStreamLine = (evt: any) => {
         if (evt.type === "result") {
-            dispatch({ type: "result", id: evt.id, ok: evt.ok, result: evt.result, error: evt.error });
+            dispatch({ type: "result", id: evt.id, ok: evt.ok, result: evt.result, error: evt.error, latencyMs: evt.latencyMs, timings: evt.timings });
         }
     };
 
@@ -247,12 +248,15 @@ export default function VerificationApp() {
                 )}
 
                 {allDone && (
-                    <div className="mb-4 flex flex-wrap gap-2.5">
-                        {Object.entries(OVERALL_META).map(([k, meta]) => (
-                            <div key={k} className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm ${meta.chipBg} ${meta.chipText}`}>
-                                <meta.Icon size={18} /> <strong>{summary[k] || 0}</strong> {meta.label}
-                            </div>
-                        ))}
+                    <div className="mb-4 flex flex-col gap-2.5">
+                        <div className="flex flex-wrap gap-2.5">
+                            {Object.entries(OVERALL_META).map(([k, meta]) => (
+                                <div key={k} className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm ${meta.chipBg} ${meta.chipText}`}>
+                                    <meta.Icon size={18} /> <strong>{summary[k] || 0}</strong> {meta.label}
+                                </div>
+                            ))}
+                        </div>
+                        <LatencySummary items={docItems.filter((it) => it.result)} />
                     </div>
                 )}
 
