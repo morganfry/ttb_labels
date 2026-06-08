@@ -11,6 +11,18 @@ This is a standalone proof-of-concept. It does not integrate with the live COLA 
 
 ---
 
+## Setup
+
+One command (runs the app + Postgres together):
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+docker compose up --build      # → http://localhost:3000  (schema created on first request)
+```
+
+Running on the host instead, the full environment-variable list, and container deployment → **[`docs/setup.md`](docs/setup.md)**.
+
+---
+
 ## Features
 
 - **Two ingestion modes** — the Verify screen has a **PDF / image upload** tab and a **CSV bulk** tab. The upload tab reads both the form and the label out of each document; CSV mode takes the application (Part I) data from columns and the label artwork from image references (URLs and/or uploaded image files — loose or in a ZIP). Both feed the identical matching, persistence, and results pipeline.
@@ -58,18 +70,6 @@ One application flows: **slice** (PDF → form page 1 + label artwork pages) →
 
 ---
 
-## Setup
-
-One command (runs the app + Postgres together):
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-docker compose up --build      # → http://localhost:3000  (schema created on first request)
-```
-
-Running on the host instead, the full environment-variable list, and container deployment → **[`docs/setup.md`](docs/setup.md)**.
-
----
-
 ## Assumptions
 
 - Each uploaded PDF is one complete application: a filled COLA Part I plus the affixed label artwork.
@@ -102,9 +102,7 @@ Running on the host instead, the full environment-variable list, and container d
 
 ### Deployment & networking
 
-- **Cloud model vs. network policy.** The prototype calls the public Anthropic API directly — the lowest-friction path for running and evaluating it. In a restricted federal network this traffic may be blocked, so it's the single most likely thing to break a real deployment. **Likely production path: Claude on AWS Bedrock.** If the app is deployed to AWS (e.g. GovCloud), Bedrock keeps the model traffic in-VPC instead of egressing to `api.anthropic.com`, with IAM auth instead of an API key. It's a contained change because every model call already funnels through one place (`lib/extraction.ts` → `callModelWithRetry`); swapping `client.messages.create` for a Bedrock `InvokeModelCommand` is a localized edit, and since Bedrock Claude speaks the same messages shape with the same prompts, extraction accuracy is unchanged. Caveats: it assumes an AWS deployment (Bedrock from an Azure-hosted app would be cross-cloud, not in-network — there Azure OpenAI / GPT-4o would be the in-network option, a different model needing prompt re-validation), and a non-Claude provider would additionally need PDF pages rasterized to images since only Claude accepts PDFs natively.
-
-- **Inference provider for a real (federal) deployment.** Beyond mere network reachability, the prototype's commercial cloud model endpoint would not satisfy federal authorization requirements as-is. A production system processing real COLA submissions would have to run inference on a **FedRAMP-authorized** service (e.g. a model offered within a FedRAMP / GovCloud boundary at the appropriate impact level) **or a self-hosted / in-boundary model** inside the system's accreditation boundary. Because the code keeps the model behind one swappable integration (`lib/extraction.ts`, model id as a per-call parameter) and judges deterministically in code, changing the inference backend is contained — but it is a prerequisite for any real use, not an optional hardening step.
+- **Model endpoint for a real (federal) deployment.** The prototype calls the public Anthropic API directly — the lowest-friction path for running and evaluating it, and the single most likely thing to change for production. In a restricted federal network that traffic is both likely blocked and not FedRAMP-authorized, so a real deployment would route inference to an in-boundary endpoint — Claude on AWS Bedrock when deployed in AWS/GovCloud (same prompts, same accuracy), or a self-hosted / FedRAMP-authorized model inside the accreditation boundary. The swap is contained: every model call funnels through one integration (`lib/extraction.ts`, model id a per-call parameter) and the matchers judge deterministically regardless. But it's a prerequisite for any real use, not optional hardening — and a non-Claude backend would also need prompt re-validation and PDF pages rasterized to images, since only Claude reads PDFs natively.
 
 - **Long batches need a streaming-friendly proxy.** Processing runs in one streaming request. A long-running Node server has no function timeout, so large batches complete fine — but any reverse proxy in front must have response buffering disabled (the route sets `X-Accel-Buffering: no` for nginx) or results won't stream incrementally.
 
