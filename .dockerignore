@@ -6,3 +6,8 @@ npm-debug.log
 Dockerfile
 docker-compose.yml
 *.md
+# Local sample inputs — never part of a deployment build.
+test-csvs
+test-form-images
+test-form-pdfs
+certificates
