@@ -98,8 +98,9 @@ export function parseCsv(text: string, maxImagesPerRow = Infinity, maxRows = Inf
     const rows: CsvRow[] = [];
     for (let r = 1; r < records.length; r++) {
         const cells = records[r];
-        // Skip blank trailing lines (a single empty cell from a trailing newline).
-        if (cells.length === 1 && cells[0].trim() === "") continue;
+        // Discard a wholly-empty row (a trailing newline's single empty cell, or a
+        // blank line of stray commas) rather than reporting it as a bad row.
+        if (cells.every((c) => c.trim() === "")) continue;
         rows.push(parseRow(cells, index, r, maxImagesPerRow));
     }
     return { rows };
@@ -125,10 +126,16 @@ function parseRow(cells: string[], index: Record<string, number>, rowNumber: num
     for (const c of ["serialNumber", "brandName", "applicantNameAddress"]) {
         if (get(c) === "") return fail(`Missing required value for "${c}".`);
     }
+    const serialNumber = get("serialNumber");
 
-    const imageRefs = parseImageRefs(get(IMAGE_REFS_COLUMN));
+    // A row with no image to read can't be verified, but it shouldn't sink the
+    // batch — fail it by name so it surfaces in the stream/summary while the rest
+    // process. A *present-but-malformed* cell keeps its specific diagnostic.
+    const imageCell = get(IMAGE_REFS_COLUMN);
+    if (imageCell === "") return fail(`${serialNumber} has no labelImage.`);
+    const imageRefs = parseImageRefs(imageCell);
     if (typeof imageRefs === "string") return fail(imageRefs); // error message
-    if (imageRefs.length === 0) return fail(`"${IMAGE_REFS_COLUMN}" must list at least one image.`);
+    if (imageRefs.length === 0) return fail(`${serialNumber} has no labelImage.`);
     if (imageRefs.length > maxImagesPerRow) {
         return fail(`"${IMAGE_REFS_COLUMN}" has ${imageRefs.length} images; the limit is ${maxImagesPerRow} per row.`);
     }
@@ -139,7 +146,7 @@ function parseRow(cells: string[], index: Record<string, number>, rowNumber: num
     };
 
     const app: ApplicationData = {
-        serialNumber: get("serialNumber"),
+        serialNumber,
         productType,
         source: sourceRaw as ProductSource,
         brandName: get("brandName"),

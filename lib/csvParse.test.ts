@@ -83,9 +83,14 @@ describe("parseCsv", () => {
         expect(rows[0].error).toMatch(/Invalid source/);
     });
 
-    it("requires at least one image", () => {
+    it("fails a row with an empty image array by serial number", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: "[]" })}`);
-        expect(rows[0].error).toMatch(/at least one image/);
+        expect(rows[0].error).toBe("24-1 has no labelImage.");
+    });
+
+    it("fails a row with a blank image cell by serial number", () => {
+        const { rows } = parseCsv(`${HEADER}\n${rowFor({ labelImages: "" })}`);
+        expect(rows[0].error).toBe("24-1 has no labelImage.");
     });
 
     it("rejects a malformed image cell that is neither JSON nor a valid file name", () => {
@@ -152,6 +157,13 @@ describe("parseCsv", () => {
     it("skips a blank trailing line", () => {
         const { rows } = parseCsv(`${HEADER}\n${rowFor()}\n`);
         expect(rows).toHaveLength(1);
+    });
+
+    it("discards a wholly-empty row of stray commas", () => {
+        const blank = CSV_COLUMNS.map(() => "").join(",");
+        const { rows } = parseCsv(`${HEADER}\n${rowFor()}\n${blank}\n${rowFor({ serialNumber: "24-2" })}`);
+        expect(rows).toHaveLength(2);
+        expect(rows.map((r) => r.app?.serialNumber)).toEqual(["24-1", "24-2"]);
     });
 
     it("numbers rows by file position", () => {
