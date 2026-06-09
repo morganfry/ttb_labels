@@ -47,28 +47,30 @@ type RowIssue = { rowNumber: number; error: string };
 type Preview = {
     validCount: number;
     invalid: RowIssue[];
-    /** Local-file references that still need (or are missing from) the uploads. */
-    imageIssues: RowIssue[];
-    /** True if any valid row references a local file (so images are expected). */
+    /** Distinct image file names referenced by valid rows (deduped across rows). */
+    referencedImages: string[];
+    /** Those not yet resolvable among the uploads — shrinks as images are added,
+     *  empty once every referenced image is present. */
+    missingImages: string[];
+    /** True if any valid row references an image (so images are expected). */
     needsImages: boolean;
 };
 
 /** Derive the preview from parsed rows and the (optional) uploaded-image index. */
 function buildPreview(rows: CsvRow[], imageIndex: ZipImageIndex | null): Preview {
     const invalid = rows.filter((r) => r.error).map((r) => ({ rowNumber: r.rowNumber, error: r.error! }));
-    const imageIssues: RowIssue[] = [];
-    let needsImages = false;
+    // Collect the distinct image file names the valid rows reference, in first-seen
+    // order, then split into those already uploaded and those still missing.
+    // Deduping across rows turns "39 rows each missing an image" into one
+    // actionable checklist that empties as the files are added.
+    const referenced: string[] = [];
+    const seen = new Set<string>();
     for (const r of rows) {
-        if (r.error || !r.imageRefs || r.imageRefs.length === 0) continue;
-        needsImages = true;
-        if (!imageIndex) {
-            imageIssues.push({ rowNumber: r.rowNumber, error: `needs ${r.imageRefs.length} uploaded image${r.imageRefs.length === 1 ? "" : "s"}` });
-            continue;
-        }
-        const missing = r.imageRefs.filter((n) => !zipHasImage(imageIndex, n));
-        if (missing.length) imageIssues.push({ rowNumber: r.rowNumber, error: `not found among uploads: ${missing.join(", ")}` });
+        if (r.error || !r.imageRefs) continue;
+        for (const n of r.imageRefs) if (!seen.has(n)) { seen.add(n); referenced.push(n); }
     }
-    return { validCount: rows.length - invalid.length, invalid, imageIssues, needsImages };
+    const missingImages = referenced.filter((n) => !imageIndex || !zipHasImage(imageIndex, n));
+    return { validCount: rows.length - invalid.length, invalid, referencedImages: referenced, missingImages, needsImages: referenced.length > 0 };
 }
 
 /**
@@ -401,13 +403,21 @@ export default function CsvVerify() {
                 </div>
             )}
 
-            {preview && preview.imageIssues.length > 0 && (
+            {preview && preview.missingImages.length > 0 && (
                 <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    <div className="mb-1.5 flex items-center gap-2 font-medium"><AlertTriangle size={16} className="text-amber-600" /> Local image references to resolve (these rows will error until fixed):</div>
-                    <ul className="ml-1 list-inside list-disc space-y-0.5">
-                        {preview.imageIssues.slice(0, 10).map((r) => <li key={r.rowNumber}>Row {r.rowNumber}: {r.error}</li>)}
-                        {preview.imageIssues.length > 10 && <li>…and {preview.imageIssues.length - 10} more.</li>}
-                    </ul>
+                    <div className="mb-2 flex items-center gap-2 font-medium">
+                        <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+                        {preview.referencedImages.length - preview.missingImages.length} of {preview.referencedImages.length} referenced image{preview.referencedImages.length === 1 ? "" : "s"} uploaded — still need {preview.missingImages.length}:
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {preview.missingImages.slice(0, 40).map((n) => (
+                            <span key={n} className="inline-flex max-w-[16rem] items-center rounded-lg border border-amber-300 bg-amber-100 px-2 py-1 font-mono text-xs">
+                                <span className="truncate" title={n}>{n}</span>
+                            </span>
+                        ))}
+                        {preview.missingImages.length > 40 && <span className="px-1 py-1 text-xs text-amber-700">+{preview.missingImages.length - 40} more</span>}
+                    </div>
+                    <div className="mt-2 text-xs text-amber-700">Any row referencing a missing image will be reported as an error until that image is uploaded — names drop off here as you add them above.</div>
                 </div>
             )}
 
