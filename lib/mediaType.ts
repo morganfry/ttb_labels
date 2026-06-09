@@ -33,6 +33,8 @@ export const isImageName = (n: string) => imageMediaType(n) !== null;
 export const isPdfName = (n: string) => /\.pdf$/i.test(n);
 /** Only real ZIPs — that's all the browser extractor (fflate) handles. */
 export const isZipName = (n: string) => /\.zip$/i.test(n);
+/** The bulk tab only accepts a .csv — reject anything else by name up front. */
+export const isCsvName = (n: string) => /\.csv$/i.test(n);
 /** A document we can verify directly (not an archive): a PDF or a supported image. */
 export const isDocName = (n: string) => isPdfName(n) || isImageName(n);
 

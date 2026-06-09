@@ -13,6 +13,7 @@
 import { processCsvBatch, type CsvWorkItem } from "@/lib/csvOrchestration";
 import { parseCsv } from "@/lib/csvParse";
 import { indexImageSources, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
+import { isCsvName } from "@/lib/mediaType";
 import { saveResult, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 import type { ItemOutcome } from "@/lib/orchestration";
@@ -37,6 +38,8 @@ export async function POST(req: Request): Promise<Response> {
 
     const file = form.get("csv");
     if (!(file instanceof File)) return json({ error: "Missing `csv` file in upload." }, 400);
+    if (!isCsvName(file.name))
+        return json({ error: "Upload a .csv file; image ZIPs go in the `images` field." }, 400);
     if (file.size > config.csvMaxBytes)
         return json({ error: `CSV exceeds the ${config.csvMaxBytes}-byte limit; split it into smaller files.` }, 413);
 

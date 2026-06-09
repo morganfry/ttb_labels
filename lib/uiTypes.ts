@@ -65,5 +65,5 @@ let idc = 0;
 export const uid = () => `f${++idc}`;
 // File-type checks live in the framework-free mediaType module (shared with the
 // server); re-exported here so UI code keeps importing them from one place.
-export { isPdfName as isPdf, isImageName as isImage, isZipName as isZip } from "./mediaType";
+export { isPdfName as isPdf, isImageName as isImage, isZipName as isZip, isCsvName as isCsv } from "./mediaType";
 

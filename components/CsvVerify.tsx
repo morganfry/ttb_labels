@@ -3,7 +3,7 @@
 import { useRef, useReducer, useMemo, useState, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Upload, FileSpreadsheet, FileArchive, Images, Download, X } from "lucide-react";
 import type { Item } from "@/lib/uiTypes";
-import { OVERALL_META, isZip, isImage, isCompleted } from "@/lib/uiTypes";
+import { OVERALL_META, isZip, isImage, isCsv, isCompleted } from "@/lib/uiTypes";
 import { readNdjsonStream, type StreamEvent } from "@/lib/ndjsonStream";
 import { useClientConfig } from "./ClientConfigProvider";
 import { parseCsv, CSV_COLUMNS, IMAGE_REFS_COLUMN, type CsvRow } from "@/lib/csvParse";
@@ -153,6 +153,10 @@ export default function CsvVerify() {
     const preview = useMemo<Preview | null>(() => (rows ? buildPreview(rows, imageIndex) : null), [rows, imageIndex]);
 
     const acceptFile = useCallback(async (f: File) => {
+        if (!isCsv(f.name)) {
+            dispatch({ type: "csvRejected", file: f, message: "Upload a .csv file. ZIP archives and images go in the label-images box below." });
+            return;
+        }
         if (f.size > cfg.csvMaxBytes) {
             dispatch({ type: "csvRejected", file: f, message: `CSV is larger than the ${Math.round(cfg.csvMaxBytes / (1024 * 1024))} MB limit; split it into smaller files.` });
             return;
