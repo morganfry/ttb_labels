@@ -111,11 +111,16 @@ export default function VerificationApp() {
 
     const addFiles = useCallback((fileList: FileList) => {
         const docs: File[] = [];
+        const rejected: string[] = [];
         for (const f of Array.from(fileList)) {
             if (isPdf(f.name) || isImage(f.name)) docs.push(f);
             else if (isZip(f.name)) void ingestZip(f);
+            else rejected.push(f.name); // unsupported type — don't drop it silently
         }
         addDocs(docs, null);
+        if (rejected.length) {
+            dispatch({ type: "notice", message: `${rejected.join(", ")}: unsupported file type. Upload a PDF, an image (JPG/PNG/WEBP/GIF), or a ZIP of them.` });
+        }
     }, [addDocs, ingestZip]);
 
     const removeItem = (id: string) => dispatch({ type: "remove", id });
