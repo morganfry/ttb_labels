@@ -117,4 +117,22 @@ export const SCENARIOS: Scenario[] = [
         form: clone(cleanForm),
         expectedOverall: "fail",
     },
+    {
+        // Guards the orchestration→matcher confidence plumbing: the form-side
+        // confidence for item 7 must reach the gate, so a possible misread is
+        // review, never a confident fail.
+        name: "low-confidence form fanciful name gates a mismatch to review, not fail",
+        label: { ...clone(cleanLabel), fancifulName: f("Sunset Reserve") },
+        form: { ...clone(cleanForm), fancifulName: ff("Moonrise Select", "low") },
+        expectedOverall: "needsReview",
+    },
+    {
+        // An unreadable item 5 defaults the ruleset to distilledSpirits; that
+        // guess must never turn an ABV-less (possibly malt, where ABV is
+        // optional) label into a confident fail.
+        name: "unreadable item 5 with absent ABV routes to review, not a confident fail",
+        label: { ...clone(cleanLabel), classType: f("Premium Lager"), alcoholContent: f(null) },
+        form: { ...clone(cleanForm), productType: { value: null, confidence: "low" } },
+        expectedOverall: "needsReview",
+    },
 ];

@@ -270,6 +270,23 @@ describe("spirits minimum-ABV floor (standard of identity)", () => {
     });
 });
 
+describe("a guessed ruleset must not produce a confident fail", () => {
+    it("absent ABV under a low-confidence product type is review, not fail", () => {
+        const res = verify(baseLabel({ alcoholContent: fld(null) }), baseApp(), { productType: "low" });
+        expect(res.fields.find((f) => f.field === "alcoholContent")!.status).toBe("review");
+        expect(res.overall).toBe("needsReview");
+    });
+    it("a confident product type still fails an absent required ABV", () => {
+        expect(statusOf(baseLabel({ alcoholContent: fld(null) }), baseApp(), "alcoholContent").status).toBe("fail");
+    });
+    it("missing appellation under low-confidence varietals (item 10) is review, not fail", () => {
+        expect(statusOf(baseLabel({ wineAppellation: fld(null) }), baseApp({ productType: "wine", grapeVarietals: "Cabernet Sauvignon" }), "wineAppellation", { grapeVarietals: "low" }).status).toBe("review");
+    });
+    it("missing appellation under a low-confidence product type is review, not fail", () => {
+        expect(statusOf(baseLabel({ wineAppellation: fld(null) }), baseApp({ productType: "wine", grapeVarietals: "Cabernet Sauvignon" }), "wineAppellation", { productType: "low" }).status).toBe("review");
+    });
+});
+
 describe("present-but-unparseable numeric values route to review, not fail", () => {
     it("compound US net contents ('1 PINT 9 FL OZ') is review and the verdict needsReview", () => {
         const res = verify(baseLabel({ netContents: fld("1 PINT 9 FL OZ") }), baseApp());

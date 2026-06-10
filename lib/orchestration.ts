@@ -266,7 +266,9 @@ function toApplicationData(form: FormExtraction): {
         productType: form.productType.value === null ? "low" : form.productType.confidence,
         source: form.source.value === null ? "low" : form.source.confidence,
         brandName: form.brandName.confidence,
+        fancifulName: form.fancifulName.confidence,
         applicantNameAddress: form.applicantNameAddress.confidence,
+        grapeVarietals: form.grapeVarietals.confidence,
         wineAppellation: form.wineAppellation.confidence,
     };
     return { app, appConfidence };

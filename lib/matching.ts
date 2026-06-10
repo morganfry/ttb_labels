@@ -128,9 +128,17 @@ export function verify(
     appConfidence: Partial<Record<keyof ApplicationData, Confidence>> = {},
 ): VerificationResult {
     const ruleset = RULESET_BY_TYPE[app.productType];
-    // Item 3 (source) decides whether country-of-origin is required. If it was
-    // unreadable/low-confidence, we can't make that call — see absentDecision.
-    const sourceUncertain = lowConfidence(appConfidence.source);
+    // Three form fields decide whether OTHER fields are required, so a shaky
+    // read of any of them makes the requirement itself unreliable: item 3
+    // (source) controls country-of-origin, item 5 (productType) picks the whole
+    // ruleset, item 10 (grapeVarietals) makes the appellation mandatory.
+    // absentDecision consults these so a guessed requirement never produces a
+    // confident "required field missing" fail.
+    const uncertain = {
+        source: lowConfidence(appConfidence.source),
+        productType: lowConfidence(appConfidence.productType),
+        varietals: lowConfidence(appConfidence.grapeVarietals),
+    };
     const fields: FieldResult[] = [];
 
     for (const key of Object.keys(FIELD_RULES) as (keyof LabelExtraction)[]) {
@@ -151,7 +159,7 @@ export function verify(
         // conditionally-required → review, otherwise N/A). absentDecision owns
         // that judgment so every conditional rule lives in one place.
         if (!field.found || field.value === null) {
-            const d = absentDecision(key, rule, app, ruleset, sourceUncertain);
+            const d = absentDecision(key, rule, app, ruleset, uncertain);
             // A low-confidence read can't reliably assert ABSENCE either: an
             // unreadable image returns every field absent, so don't turn that into
             // a confident "required field missing" fail — route to review. The
@@ -200,7 +208,7 @@ export function verify(
     // productType (item 5) selects the whole ruleset; if it was read with low
     // confidence (or defaulted from an unreadable item 5), the selection itself
     // is unreliable — surface that and route the verdict to review.
-    if (lowConfidence(appConfidence.productType)) flagProductTypeUncertain(fields);
+    if (uncertain.productType) flagProductTypeUncertain(fields);
 
     return { serialNumber: app.serialNumber, productType: app.productType, overall: rollup(fields), fields };
 }
@@ -248,19 +256,23 @@ function dispatch(
  *  - sulfitesDeclaration on wine — required at ≥10 ppm SO₂, not on the form.
  *  - wineAppellation — required only when a grape varietal is the class/type,
  *    inferred here from the form's item-10 grape varietals.
+ * A "required field missing" fail is only as reliable as the form read that
+ * made the field required, so when that controlling read was low-confidence
+ * (`uncertain`), the fail is downgraded to review — the same misread-must-not-
+ * masquerade-as-violation rule the confidence gate applies to mismatches.
  */
 function absentDecision(
     key: keyof LabelExtraction,
     rule: typeof FIELD_RULES[keyof LabelExtraction],
     app: ApplicationData,
     ruleset: typeof RULESET_BY_TYPE[ProductType],
-    sourceUncertain: boolean,
+    uncertain: { source: boolean; productType: boolean; varietals: boolean },
 ): { status: FieldStatus; issue?: string } {
     if (key === "countryOfOrigin") {
         // If item 3 (source) couldn't be read, we can't tell whether origin is
         // required — route to review instead of silently treating it as domestic
         // (which would suppress a genuine import requirement).
-        if (sourceUncertain) return { status: "review", issue: "Could not read whether the product is imported (form item 3); confirm whether country of origin is required on the label." };
+        if (uncertain.source) return { status: "review", issue: "Could not read whether the product is imported (form item 3); confirm whether country of origin is required on the label." };
         return app.source === "imported" && ruleset.requiresOriginIfImported
             ? { status: "fail", issue: "Country of origin is required for imported products but is missing from the label." }
             : { status: "notApplicable" };
@@ -268,15 +280,22 @@ function absentDecision(
     if (key === "alcoholContent") {
         if (ruleset.abvOptional) return { status: "notApplicable" };          // unflavored malt
         if (ruleset.abvConditional) return { status: "review", issue: "No alcohol content found; it is mandatory for wine over 14% ABV (optional, with conditions, for 7–14% table/light wine). Confirm by eye." };
+        // Whether ABV is required at all depends on which ruleset item 5
+        // selected (optional on unflavored malt); under a guessed ruleset that
+        // fail could be wrong, so it can't be confident.
+        if (uncertain.productType) return { status: "review", issue: "No alcohol content found, and the product type (form item 5) was read with low confidence — whether ABV is required depends on it. Confirm by eye." };
         return { status: "fail", issue: 'Required field "alcoholContent" is missing from the label.' };
     }
     if (key === "wineAppellation") {
         // Reaches here only for wine; non-wine is resolved to N/A earlier. The
         // appellation becomes mandatory once the wine is varietally labeled.
         const varietalLabeled = !!app.grapeVarietals && app.grapeVarietals.trim() !== "";
-        return varietalLabeled
-            ? { status: "fail", issue: "Appellation of origin is required when a grape varietal is used as the class/type designation, but none appears on the label." }
-            : { status: "notApplicable" };
+        if (!varietalLabeled) return { status: "notApplicable" };
+        // The requirement rests on two model-read form fields: item 5 chose the
+        // wine ruleset and item 10 supplied the varietal. If either read was
+        // low-confidence, the requirement itself is a guess.
+        if (uncertain.varietals || uncertain.productType) return { status: "review", issue: "An appellation appears required because the form lists a grape varietal, but that form read was low-confidence; confirm by eye." };
+        return { status: "fail", issue: "Appellation of origin is required when a grape varietal is used as the class/type designation, but none appears on the label." };
     }
     if (key === "sulfitesDeclaration") {
         return ruleset.requiresSulfitesDeclaration
