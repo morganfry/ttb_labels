@@ -24,6 +24,12 @@ const pool = new pg.Pool({
     ssl: dbSsl(),
 });
 
+// An idle pooled client whose backend connection drops (Postgres restart,
+// failover, network blip) emits "error" on the Pool; with no listener that is
+// an uncaughtException that kills the whole process. The pool has already
+// discarded the client, so logging is the complete response.
+pool.on("error", (err) => console.error("Idle Postgres client error:", err.message));
+
 /**
  * Tagged-template + .query() wrapper around pg.Pool.
  *
