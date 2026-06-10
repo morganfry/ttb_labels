@@ -270,6 +270,19 @@ describe("spirits minimum-ABV floor (standard of identity)", () => {
     });
 });
 
+describe("present-but-unparseable numeric values route to review, not fail", () => {
+    it("compound US net contents ('1 PINT 9 FL OZ') is review and the verdict needsReview", () => {
+        const res = verify(baseLabel({ netContents: fld("1 PINT 9 FL OZ") }), baseApp());
+        const nc = res.fields.find((f) => f.field === "netContents")!;
+        expect(nc.status).toBe("review");
+        expect(nc.issues.join(" ")).toMatch(/could not parse/i);
+        expect(res.overall).toBe("needsReview");
+    });
+    it("an unreadable-to-the-parser ABV is review, not a confident fail", () => {
+        expect(statusOf(baseLabel({ alcoholContent: fld("100% Blue Weber Agave") }), baseApp(), "alcoholContent").status).toBe("review");
+    });
+});
+
 describe("uncertain product type routes the whole verdict to review", () => {
     it("low-confidence productType escalates to needsReview via the classType row", () => {
         const res = verify(baseLabel(), baseApp(), { productType: "low" });

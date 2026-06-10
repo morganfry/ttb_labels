@@ -61,17 +61,22 @@ function prepTolerant(value: string, kind: "address" | "designation" | undefined
 
 /**
  * Numeric match for ABV / net contents. When `appValue` is null the field is
- * label-only (no form counterpart), so the bar is presence + parseability
+ * label-only (no form counterpart), so the bar is presence + a readable value
  * rather than equality. Net contents widens the tolerance slightly by
  * relative amount to absorb rounding across unit conversions.
+ *
+ * A value that is PRESENT but the parser can't read (e.g. compound US
+ * "1 PINT 9 FL OZ", which parseVolumeMl deliberately doesn't handle) is a
+ * parser gap, not a proven violation — it routes to review, never a confident
+ * fail, the same philosophy as the confidence gate.
  */
 function numericMatch(labelValue: string, appValue: string | null, unit: "percent" | "ml", tolerance: number): { status: FieldStatus; issues: string[] } {
     const parse = unit === "percent" ? parsePercent : parseVolumeMl;
     const labelNum = parse(labelValue);
-    if (labelNum === null) return { status: "fail", issues: [`Could not parse a ${unit} value from "${labelValue}".`] };
+    if (labelNum === null) return { status: "review", issues: [`Could not parse a ${unit} value from "${labelValue}"; confirm it by eye.`] };
     if (appValue === null) return { status: "pass", issues: [] }; // label-only: presence is the bar
     const appNum = parse(appValue);
-    if (appNum === null) return { status: "fail", issues: [`Could not parse a ${unit} value from application "${appValue}".`] };
+    if (appNum === null) return { status: "review", issues: [`Could not parse a ${unit} value from application "${appValue}"; confirm it by eye.`] };
     const tol = unit === "ml" ? Math.max(tolerance, appNum * MATCH_TUNING.netContentsRelativeTolerance) : tolerance;
     if (Math.abs(labelNum - appNum) <= tol) return { status: "pass", issues: [] };
     return { status: "fail", issues: [`Label ${labelNum}${unit === "percent" ? "%" : "mL"} differs from application ${appNum} beyond tolerance ${tol}.`] };
