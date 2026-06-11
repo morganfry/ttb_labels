@@ -207,14 +207,27 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
         } catch (e) {
             return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false });
         }
-        // The form stays a PDF document block — its extracted text layer helps the
-        // form read. The label slice is rasterized to JPEGs capped at the model's
-        // native resolution (config.visionMaxEdgePx): high-res scans get downscaled
-        // by the API anyway, so sending them as a PDF pays upload + server-side
+        // Both slices are rasterized to JPEGs capped at the model's native
+        // resolution (config.visionMaxEdgePx): high-res pages get downscaled by
+        // the API anyway, so sending them as PDFs pays upload + server-side
         // rasterization + per-page text tokens for pixels the model never sees.
-        // Rasterization must never break the label read — ANY failure (corrupt
-        // page, page-count cap, WASM init) falls back to the PDF slice as-is.
-        formInput = { base64: toBase64(formBytes), mediaType: "application/pdf" };
+        // The form page additionally carries its text layer (extracted here via
+        // mupdf), reproducing what the API's own PDF pipeline gave the form read
+        // — page image + text — at a fraction of the payload. Rasterization must
+        // never break a read: ANY failure (corrupt page, page-count cap, WASM
+        // init) falls back to the PDF slice as-is.
+        try {
+            const [page] = await rasterizePdfToImages(formBytes, {
+                maxEdgePx: config.visionMaxEdgePx,
+                jpegQuality: config.rasterJpegQuality,
+                maxPages: 1, // extractFirstPage guarantees a single page
+                extractText: true,
+            });
+            formInput = { base64: page.base64, mediaType: page.mediaType, supplementText: page.text?.trim() || undefined };
+        } catch (e) {
+            console.warn(`Form rasterization fell back to PDF for ${item.name}: ${msg(e)}`);
+            formInput = { base64: toBase64(formBytes), mediaType: "application/pdf" };
+        }
         try {
             labelInput = (await rasterizePdfToImages(labelBytes, {
                 maxEdgePx: config.visionMaxEdgePx,

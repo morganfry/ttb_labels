@@ -11,6 +11,14 @@ async function makePdf(...pageSizes: Array<[number, number]>): Promise<Uint8Arra
     return doc.save();
 }
 
+/** A one-page PDF with a real text layer. */
+async function makeTextPdf(text: string): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    page.drawText(text, { x: 50, y: 700, size: 14 });
+    return doc.save();
+}
+
 const JPEG_SIG = (b64: string) => {
     const bytes = Buffer.from(b64, "base64");
     return [bytes[0], bytes[1]];
@@ -32,6 +40,20 @@ describe("rasterizePdfToImages", () => {
         // Aspect ratios survive: portrait page stays portrait, landscape landscape.
         expect(pages[0].heightPx).toBeGreaterThan(pages[0].widthPx);
         expect(pages[1].widthPx).toBeGreaterThan(pages[1].heightPx);
+    });
+
+    it("extracts the text layer when asked, and omits it otherwise", async () => {
+        const pdf = await makeTextPdf("SERIAL 24-0001");
+        const [withText] = await rasterizePdfToImages(pdf, { ...OPTS, extractText: true });
+        expect(withText.text).toContain("SERIAL 24-0001");
+        const [without] = await rasterizePdfToImages(pdf, OPTS);
+        expect(without.text).toBeUndefined();
+    });
+
+    it("returns an empty text layer (not undefined) for a textless page when asked", async () => {
+        const pdf = await makePdf([400, 400]);
+        const [page] = await rasterizePdfToImages(pdf, { ...OPTS, extractText: true });
+        expect(page.text).toBe("");
     });
 
     it("refuses documents over the page cap (caller falls back to the PDF)", async () => {

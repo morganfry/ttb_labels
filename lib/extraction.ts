@@ -20,6 +20,13 @@ export interface ExtractionInput {
     /** Base64-encoded image or single-page PDF. */
     base64: string;
     mediaType: MediaType;
+    /**
+     * Optional machine-extracted text layer accompanying the image — sent as a
+     * supplementary text block after it, mirroring what the API's own PDF
+     * pipeline provides (page image + extracted text) when we rasterize a PDF
+     * page ourselves. The image stays authoritative.
+     */
+    supplementText?: string;
 }
 
 /**
@@ -112,9 +119,10 @@ export async function extract<T>(opts: ExtractOptions<T>): Promise<ExtractionRes
  */
 async function callModel(input: ExtractionInput | ExtractionInput[], systemPrompt: string, model: string, signal?: AbortSignal): Promise<string> {
     const inputs = Array.isArray(input) ? input : [input];
-    // Each source becomes its own content block; a leading note tells the model
-    // that several sources describe one subject so it merges rather than picks.
-    const sourceBlocks = inputs.map(buildSourceBlock);
+    // Each source becomes its own content block (plus an optional text-layer
+    // block); a leading note tells the model that several sources describe one
+    // subject so it merges rather than picks.
+    const sourceBlocks = inputs.flatMap(buildSourceBlocks);
     const lead: Anthropic.TextBlockParam[] = inputs.length > 1
         ? [{ type: "text", text: `The following ${inputs.length} images are different views (e.g. front, back, neck) of a SINGLE label. Transcribe each field once, drawing from whichever view shows it.` }]
         : [];
@@ -155,12 +163,19 @@ async function callModel(input: ExtractionInput | ExtractionInput[], systemPromp
 
 /** Images and PDFs require different content-block shapes. The installed SDK
  *  doesn't export a param union that includes the PDF "document" block, so this
- *  stays loosely typed; the shape is validated by the API at call time. */
-function buildSourceBlock(input: ExtractionInput): any {
-    if (input.mediaType === "application/pdf") {
-        return { type: "document", source: { type: "base64", media_type: "application/pdf", data: input.base64 } };
-    }
-    return { type: "image", source: { type: "base64", media_type: input.mediaType, data: input.base64 } };
+ *  stays loosely typed; the shape is validated by the API at call time.
+ *  A supplementText rides along as a text block AFTER its image, so the model
+ *  reads the page first and the text layer second (cross-reference, not source
+ *  of truth). Exported for tests. */
+export function buildSourceBlocks(input: ExtractionInput): any[] {
+    const source = input.mediaType === "application/pdf"
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: input.base64 } }
+        : { type: "image", source: { type: "base64", media_type: input.mediaType, data: input.base64 } };
+    if (!input.supplementText) return [source];
+    return [source, {
+        type: "text",
+        text: `Machine-extracted text layer of the page above, for cross-reference only — the image is authoritative:\n${input.supplementText}`,
+    }];
 }
 
 /**

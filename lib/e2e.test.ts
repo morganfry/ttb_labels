@@ -124,7 +124,7 @@ describe("end-to-end pipeline (stubbed parsers)", () => {
         expect(summary.failed).toBe(1);
     });
 
-    it("PDF items reach the label parser as rasterized JPEGs, the form as a PDF block", async () => {
+    it("PDF items reach both parsers as rasterized JPEGs, not PDF blocks", async () => {
         const item: WorkItem = { id: "1", name: "app.pdf", labelPdf: MINIMAL_PDF, formPdf: MINIMAL_PDF };
         const seen: { label?: unknown; form?: unknown } = {};
         const outcomes: ItemOutcome[] = [];
@@ -136,9 +136,10 @@ describe("end-to-end pipeline (stubbed parsers)", () => {
             },
         });
         expect(outcomes[0].ok).toBe(true);
-        // Form keeps the document block (text layer helps the form read)...
-        expect(seen.form).toEqual({ base64: expect.any(String), mediaType: "application/pdf" });
-        // ...while the label side is one JPEG image block per artwork page.
+        // The form page arrives rasterized; MINIMAL_PDF has no text layer, so
+        // there is no supplement (an empty extraction must not send a block).
+        expect(seen.form).toEqual({ base64: expect.any(String), mediaType: "image/jpeg", supplementText: undefined });
+        // The label side is one JPEG image block per artwork page.
         expect(Array.isArray(seen.label)).toBe(true);
         for (const input of seen.label as Array<{ base64: string; mediaType: string }>) {
             expect(input.mediaType).toBe("image/jpeg");

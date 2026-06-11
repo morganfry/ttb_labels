@@ -18,6 +18,9 @@ import type { ExtractionInput } from "./extraction";
 export interface RasterizedPage extends ExtractionInput {
     widthPx: number;
     heightPx: number;
+    /** The page's text layer (when {@link RasterizeOptions.extractText}); empty
+     *  string for pages with no text layer (e.g. pure scans). */
+    text?: string;
 }
 
 export interface RasterizeOptions {
@@ -31,6 +34,9 @@ export interface RasterizeOptions {
      * a huge fallback document is better rasterized server-side than here.
      */
     maxPages: number;
+    /** Also extract each page's text layer (what the API's own PDF pipeline
+     *  would have provided alongside the page image). */
+    extractText?: boolean;
 }
 
 type Mupdf = typeof import("mupdf");
@@ -72,6 +78,12 @@ export async function rasterizePdfToImages(pdfBytes: Uint8Array, opts: Rasterize
                 const longEdgePts = Math.max(x1 - x0, y1 - y0);
                 if (!(longEdgePts > 0)) throw new Error(`Page ${i + 1} has empty bounds.`);
                 const scale = opts.maxEdgePx / longEdgePts;
+                let text: string | undefined;
+                if (opts.extractText) {
+                    const structured = page.toStructuredText();
+                    try { text = structured.asText(); }
+                    finally { structured.destroy(); }
+                }
                 const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
                 try {
                     const jpeg = pixmap.asJPEG(opts.jpegQuality, false);
@@ -80,6 +92,7 @@ export async function rasterizePdfToImages(pdfBytes: Uint8Array, opts: Rasterize
                         mediaType: "image/jpeg",
                         widthPx: pixmap.getWidth(),
                         heightPx: pixmap.getHeight(),
+                        ...(text !== undefined ? { text } : {}),
                     });
                 } finally {
                     pixmap.destroy();

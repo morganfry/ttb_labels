@@ -1,7 +1,7 @@
 /* Extraction prompts for the two parsers. Exported as template strings so
  * lib/parsers.ts can import them. */
 
-export const LABEL_PROMPT = `You transcribe alcohol beverage labels for TTB compliance review. You are given a PDF that may contain one or more label images (front, back, neck strip, etc.) for a single product. Examine all label images and transcribe the combined set of fields into one JSON object. If the same field appears on more than one label, use the most legible and complete version. You only transcribe — a separate system judges compliance.
+export const LABEL_PROMPT = `You transcribe alcohol beverage labels for TTB compliance review. You are given the label artwork as one or more images (or a PDF) showing one or more labels (front, back, neck strip, etc.) for a single product. Examine all label images and transcribe the combined set of fields into one JSON object. If the same field appears on more than one label, use the most legible and complete version. You only transcribe — a separate system judges compliance.
 
 Rules:
 1. Verbatim: copy text exactly as printed (same case, punctuation, abbreviations). Never expand, correct, or normalize — e.g. keep "750 mL" as-is, keep "STONE'S" as-is.
@@ -30,6 +30,8 @@ If the image is not a label or is unreadable, return the structure with all fiel
 export const FORM_PROMPT = `You transcribe page 1 of a filled TTB Form 5100.31 for compliance review. Transcribe the applicant's Part I entries into JSON. You only transcribe — a separate system judges.
 
 Scope: extract ONLY Part I (items 1–15), the upper section of page 1. Ignore everything else even if visible — Part II/III, "FOR TTB USE ONLY" boxes, instructions, the Paperwork Reduction Act notice, the allowable-revisions table, and the affixed label artwork. Do not extract values from any of those.
+
+The page may arrive as an image accompanied by its machine-extracted text layer in a separate text block. Use that text only to cross-check hard-to-read characters — the page image is authoritative, and the same scope rule applies to both.
 
 Rules:
 1. Verbatim: copy each entry exactly; do not expand abbreviations or fix typos.

@@ -77,16 +77,20 @@ running it see docs/setup.md.
   falls back to the whole PDF when none are detected (or every page has one). It
   must never break the label read — keep the internal try/catch + whole-PDF
   fallback. (Image items skip this entirely; the one image is sent as-is.)
-- **The label slice is then rasterized to capped JPEGs** (pdfRaster.ts, mupdf
-  WASM) — one image block per artwork page at config.visionMaxEdgePx (1568 px,
-  the Haiku/Sonnet native image limit), because the API downscales anything
-  larger anyway: a high-res scan sent as a PDF pays upload + server-side
-  rasterization + per-page text tokens for pixels the model never sees. The form
-  page STAYS a PDF document block (its text layer helps the form read). Same
-  never-break rule: ANY rasterization failure (corrupt page, rasterMaxPages cap,
-  WASM init) falls back to sending the PDF slice as-is — keep that try/catch.
-  mupdf is ESM+WASM: import it dynamically and keep it in next.config.js
-  serverExternalPackages. If the label read ever moves to Opus 4.7+, raise
+- **Both slices are then rasterized to capped JPEGs** (pdfRaster.ts, mupdf
+  WASM) at config.visionMaxEdgePx (1568 px, the Haiku/Sonnet native image
+  limit), because the API downscales anything larger anyway: a high-res page
+  sent as a PDF pays upload + server-side rasterization + per-page text tokens
+  for pixels the model never sees. The label side is one image block per
+  artwork page. The form page is one image block PLUS its mupdf-extracted text
+  layer (ExtractionInput.supplementText → a text block after the image),
+  reproducing what the API's PDF pipeline provided — page image + text — at a
+  fraction of the payload; the label read deliberately gets NO text supplement
+  (it must stay verbatim-from-image). Same never-break rule on BOTH sides: ANY
+  rasterization failure (corrupt page, rasterMaxPages cap, WASM init) falls
+  back to sending that PDF slice as-is — keep those try/catches. mupdf is
+  ESM+WASM: import it dynamically and keep it in next.config.js
+  serverExternalPackages. If a read ever moves to Opus 4.7+, raise
   visionMaxEdgePx toward 2576 to use its high-res support.
 - **Flat images are downscaled SERVER-side too** (imageDownscale.ts, sharp) —
   deliberately not in the browser, so ONE choke point covers every image intake:
