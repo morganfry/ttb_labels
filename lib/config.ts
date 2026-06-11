@@ -34,7 +34,11 @@ export const config = {
      * Content-Length before it's buffered; per-file, item-count, and CSV row caps
      * bound the rest. Large legit batches should be split rather than raised. */
     uploadMaxBytes: intFromEnv("UPLOAD_MAX_BYTES", 256 * 1024 * 1024),
-    verifyMaxFileBytes: intFromEnv("VERIFY_MAX_FILE_BYTES", 50 * 1024 * 1024),
+    /* Aligned with the model API's 32 MB request ceiling: payloads are sent
+     * base64 (×4/3), so ~24 MB raw is the largest file whose worst-case slice
+     * (the un-rasterized fallback sends it nearly whole) still fits. A higher
+     * cap would accept uploads that can only fail at the model call. */
+    verifyMaxFileBytes: intFromEnv("VERIFY_MAX_FILE_BYTES", 24 * 1024 * 1024),
     verifyMaxItems: intFromEnv("VERIFY_MAX_ITEMS", 500),
     csvMaxBytes: intFromEnv("CSV_MAX_BYTES", 16 * 1024 * 1024),
     csvMaxRows: intFromEnv("CSV_MAX_ROWS", 5000),
@@ -71,6 +75,8 @@ export const config = {
      * enforced before each entry is expanded, so these bound RAM even against a
      * crafted archive. */
     pdfZipMaxBytes: intFromEnv("PDF_ZIP_MAX_BYTES", 200 * 1024 * 1024),
-    pdfZipMaxEntryBytes: intFromEnv("PDF_ZIP_MAX_ENTRY_BYTES", 50 * 1024 * 1024),
+    /* Matches verifyMaxFileBytes: ZIP entries become verify-route uploads, so a
+     * larger entry would extract client-side only to be rejected server-side. */
+    pdfZipMaxEntryBytes: intFromEnv("PDF_ZIP_MAX_ENTRY_BYTES", 24 * 1024 * 1024),
     pdfZipMaxTotalBytes: intFromEnv("PDF_ZIP_MAX_TOTAL_BYTES", 500 * 1024 * 1024),
 } as const;
