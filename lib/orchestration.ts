@@ -8,6 +8,7 @@
  * opening hundreds of simultaneous model calls).
  */
 import { sliceApplicationPdf, toBase64 } from "./pdfFirstPage";
+import { rasterizePdfToImages } from "./pdfRaster";
 import { parseLabel, parseForm, type FormExtraction } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError, type ExtractionInput, type MediaType } from "./extraction";
@@ -40,7 +41,7 @@ export interface WorkItem {
  * the ~5s expectation gets diagnosed (the form vision read is the usual driver).
  */
 export interface ItemTimings {
-    /** PDF slicing — form page + artwork pages (PDF path only). */
+    /** PDF slicing + label rasterization (PDF path only). */
     prepMs?: number;
     /** Resolving label images from the uploaded set (CSV path only). */
     resolveMs?: number;
@@ -188,7 +189,7 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
     // → label) so the model never sees boilerplate pages. A flat image can't be
     // sliced, so the one image — which shows the whole application — is fed to
     // both parsers verbatim.
-    let labelInput: ExtractionInput, formInput: ExtractionInput;
+    let labelInput: ExtractionInput | ExtractionInput[], formInput: ExtractionInput;
     const mediaType: MediaType = item.mediaType ?? "application/pdf";
     if (mediaType === "application/pdf") {
         const prepStart = Date.now();
@@ -204,9 +205,25 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
         } catch (e) {
             return fail({ kind: "extraction", stage: "form", message: `Could not read form PDF: ${msg(e)}`, retryable: false });
         }
-        timings.prepMs = Date.now() - prepStart;
+        // The form stays a PDF document block — its extracted text layer helps the
+        // form read. The label slice is rasterized to JPEGs capped at the model's
+        // native resolution (config.visionMaxEdgePx): high-res scans get downscaled
+        // by the API anyway, so sending them as a PDF pays upload + server-side
+        // rasterization + per-page text tokens for pixels the model never sees.
+        // Rasterization must never break the label read — ANY failure (corrupt
+        // page, page-count cap, WASM init) falls back to the PDF slice as-is.
         formInput = { base64: toBase64(formBytes), mediaType: "application/pdf" };
-        labelInput = { base64: toBase64(labelBytes), mediaType: "application/pdf" };
+        try {
+            labelInput = (await rasterizePdfToImages(labelBytes, {
+                maxEdgePx: config.visionMaxEdgePx,
+                jpegQuality: config.rasterJpegQuality,
+                maxPages: config.rasterMaxPages,
+            })).map(({ base64, mediaType: mt }) => ({ base64, mediaType: mt }));
+        } catch (e) {
+            console.warn(`Label rasterization fell back to PDF for ${item.name}: ${msg(e)}`);
+            labelInput = { base64: toBase64(labelBytes), mediaType: "application/pdf" };
+        }
+        timings.prepMs = Date.now() - prepStart;
     } else {
         const base64 = toBase64(item.formPdf); // image: label and form bytes are the one image
         formInput = { base64, mediaType };

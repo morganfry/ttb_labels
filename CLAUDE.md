@@ -77,6 +77,17 @@ running it see docs/setup.md.
   falls back to the whole PDF when none are detected (or every page has one). It
   must never break the label read — keep the internal try/catch + whole-PDF
   fallback. (Image items skip this entirely; the one image is sent as-is.)
+- **The label slice is then rasterized to capped JPEGs** (pdfRaster.ts, mupdf
+  WASM) — one image block per artwork page at config.visionMaxEdgePx (1568 px,
+  the Haiku/Sonnet native image limit), because the API downscales anything
+  larger anyway: a high-res scan sent as a PDF pays upload + server-side
+  rasterization + per-page text tokens for pixels the model never sees. The form
+  page STAYS a PDF document block (its text layer helps the form read). Same
+  never-break rule: ANY rasterization failure (corrupt page, rasterMaxPages cap,
+  WASM init) falls back to sending the PDF slice as-is — keep that try/catch.
+  mupdf is ESM+WASM: import it dynamically and keep it in next.config.js
+  serverExternalPackages. If the label read ever moves to Opus 4.7+, raise
+  visionMaxEdgePx toward 2576 to use its high-res support.
 - **Label and form can run on different models** (config.labelModel /
   config.formModel; LABEL_MODEL / FORM_MODEL env). The label is verbatim
   transcription, so it defaults to a faster/cheaper tier; the form stays on the

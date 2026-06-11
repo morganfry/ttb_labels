@@ -38,6 +38,16 @@ export const config = {
     verifyMaxItems: intFromEnv("VERIFY_MAX_ITEMS", 500),
     csvMaxBytes: intFromEnv("CSV_MAX_BYTES", 16 * 1024 * 1024),
     csvMaxRows: intFromEnv("CSV_MAX_ROWS", 5000),
+    /* Label rasterization (pdfRaster.ts): artwork pages are rendered to JPEGs
+     * capped at this long edge before the model call. 1568 px is the native
+     * image limit of the Haiku/Sonnet tiers in use — larger inputs are
+     * downscaled by the API anyway, so extra pixels cost upload time for zero
+     * accuracy. Raise toward 2576 only if moving the label read to Opus 4.7+. */
+    visionMaxEdgePx: intFromEnv("VISION_MAX_EDGE_PX", 1568),
+    rasterJpegQuality: intFromEnv("RASTER_JPEG_QUALITY", 85),
+    /* Artwork slices are a few pages; past this count, sending the PDF as-is
+     * beats building dozens of JPEGs on our CPU. */
+    rasterMaxPages: intFromEnv("RASTER_MAX_PAGES", 8),
     /* Per-label latency target (ms). The compliance team's hard bar from the
      * discovery interviews ("if we can't get results back in about 5 seconds,
      * nobody's going to use it"). Purely a display benchmark — it colors the

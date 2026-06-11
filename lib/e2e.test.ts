@@ -124,6 +124,27 @@ describe("end-to-end pipeline (stubbed parsers)", () => {
         expect(summary.failed).toBe(1);
     });
 
+    it("PDF items reach the label parser as rasterized JPEGs, the form as a PDF block", async () => {
+        const item: WorkItem = { id: "1", name: "app.pdf", labelPdf: MINIMAL_PDF, formPdf: MINIMAL_PDF };
+        const seen: { label?: unknown; form?: unknown } = {};
+        const outcomes: ItemOutcome[] = [];
+        await processBatch([item], {
+            onResult: (o) => outcomes.push(o),
+            parsers: {
+                parseLabel: vi.fn(async (input) => { seen.label = input; return ok(SCENARIOS[0].label); }),
+                parseForm: vi.fn(async (input) => { seen.form = input; return ok(SCENARIOS[0].form); }),
+            },
+        });
+        expect(outcomes[0].ok).toBe(true);
+        // Form keeps the document block (text layer helps the form read)...
+        expect(seen.form).toEqual({ base64: expect.any(String), mediaType: "application/pdf" });
+        // ...while the label side is one JPEG image block per artwork page.
+        expect(Array.isArray(seen.label)).toBe(true);
+        for (const input of seen.label as Array<{ base64: string; mediaType: string }>) {
+            expect(input.mediaType).toBe("image/jpeg");
+        }
+    });
+
     it("image items skip PDF slicing and feed the one image to both parsers", async () => {
         // Deliberately NOT a PDF: if slicing ran, extractFirstPage would throw.
         const imageBytes = new TextEncoder().encode("\x89PNG\r\n\x1a\n fake png");

@@ -12,7 +12,7 @@ const UPLOAD_MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 256 * 1024 * 10
 
 const nextConfig = {
     output: "standalone",
-    serverExternalPackages: ["pdf-lib"],
+    serverExternalPackages: ["pdf-lib", "mupdf"], // mupdf is ESM+WASM — must stay external, not bundled
     experimental: {
         middlewareClientMaxBodySize: UPLOAD_MAX_BYTES,
     },
