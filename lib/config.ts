@@ -59,8 +59,11 @@ export const config = {
     latencyTargetMs: intFromEnv("LATENCY_TARGET_MS", 5000),
     /* CSV bulk path: label images are uploaded alongside the CSV (loose files
      * and/or a ZIP) and resolved from memory. These bound that intake so one bad
-     * row (or archive) can't balloon a batch. */
-    csvImageMaxBytes: intFromEnv("CSV_IMAGE_MAX_BYTES", 12 * 1024 * 1024),
+     * row (or archive) can't balloon a batch. Per-image cap aligned with the
+     * model API's 10 MB-per-image limit, which is measured on the BASE64 form:
+     * 7.5 MB raw × 4/3 = 10 MB encoded. A larger image could only fail at the
+     * model call, after the upload already succeeded. */
+    csvImageMaxBytes: intFromEnv("CSV_IMAGE_MAX_BYTES", 7.5 * 1024 * 1024),
     csvMaxImagesPerRow: intFromEnv("CSV_MAX_IMAGES_PER_ROW", 6),
     /* Cap on the uploaded image-ZIP (compressed upload size). */
     csvImageZipMaxBytes: intFromEnv("CSV_IMAGE_ZIP_MAX_BYTES", 100 * 1024 * 1024),
