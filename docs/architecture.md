@@ -31,7 +31,7 @@ flowchart LR
         ui["Web UI + API routes<br/>(model API key stays server-side)"]
     end
 
-    db[("PostgreSQL<br/>extracted text + verdicts only")]
+    db[("PostgreSQL<br/>extracted text + verdicts<br/>(+ error audit rows) — no file bytes")]
 
     subgraph cloud["Outside the deployment network"]
         model["Anthropic vision model API<br/>(label + form transcription)"]
@@ -44,8 +44,10 @@ flowchart LR
 
 Notes:
 - **No COLA integration** — this is a standalone proof-of-concept by design.
-- **Retention:** only extracted text and verdicts are stored. Uploaded PDFs and
-  label images are processed in memory and discarded.
+- **Retention:** only extracted text and verdicts are stored — plus, for items
+  whose processing failed, an `overall='error'` audit row (file/row name + error
+  message) so failures don't vanish from history. Uploaded PDFs and label images
+  are processed in memory and discarded; no file bytes are ever persisted.
 - **CSV label images are uploaded, never fetched** (loose files and/or a ZIP) —
   no outbound image request, the safer choice in a restricted network.
 
@@ -98,7 +100,7 @@ flowchart LR
         helpers["textNormalize · unitParse"]
         schema["schema<br/>FIELD_RULES · rulesets · warning text"]
         config["config<br/>models · caps · concurrency"]
-        persistence["persistence (barrel)<br/>saveResult · search · getResult"]
+        persistence["persistence (barrel)<br/>saveResult · saveError · search · getResult"]
     end
 
     db[("PostgreSQL")]
@@ -190,6 +192,7 @@ sequenceDiagram
         Note over Judge: deterministic + confidence-gated.<br/>Government warning checked strictly.
         Judge-->>Pool: per-field verdicts + overall
         Pool->>DB: saveResult (non-fatal — a lost write never drops a verdict)
+        Note over Pool,DB: a FAILED read short-circuits before the judge and<br/>persists an overall='error' audit row instead (saveError)
         Pool-->>API: ItemOutcome
         API-->>UI: NDJSON result line (streamed)
         UI->>UI: reducer appends the row
@@ -205,7 +208,7 @@ transcription onward is identical.
 **CSV variant.** Same diagram with the front swapped: instead of slicing a PDF
 and model-reading the form, `csvParse` turns the row's columns into the
 application data, and `imageResolve`/`zipImages` resolve the label images by name
-from the uploaded set (loose files and/or a ZIP), then downscaled to the same
+from the uploaded set (loose files and/or a ZIP) and downscale them to the same
 vision cap. The label is still model-read;
 `verify`, persistence, streaming, and the shared `runPool` are identical.
 
