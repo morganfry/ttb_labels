@@ -9,6 +9,7 @@
  */
 import { sliceApplicationPdf, toBase64 } from "./pdfFirstPage";
 import { rasterizePdfToImages } from "./pdfRaster";
+import { downscaleImageInput } from "./imageDownscale";
 import { parseLabel, parseForm, type FormExtraction } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError, type ExtractionInput, type MediaType } from "./extraction";
@@ -41,7 +42,8 @@ export interface WorkItem {
  * the ~5s expectation gets diagnosed (the form vision read is the usual driver).
  */
 export interface ItemTimings {
-    /** PDF slicing + label rasterization (PDF path only). */
+    /** Input preparation: PDF slicing + label rasterization, or flat-image
+     *  downscaling (upload path only; the CSV path's prep is resolveMs). */
     prepMs?: number;
     /** Resolving label images from the uploaded set (CSV path only). */
     resolveMs?: number;
@@ -225,9 +227,14 @@ async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutco
         }
         timings.prepMs = Date.now() - prepStart;
     } else {
-        const base64 = toBase64(item.formPdf); // image: label and form bytes are the one image
-        formInput = { base64, mediaType };
-        labelInput = { base64, mediaType };
+        const prepStart = Date.now();
+        // Image: label and form bytes are the one image. Downscale it ONCE to
+        // the vision cap (server-side, so every intake is covered) and share
+        // the result; a decode failure passes the original through unchanged.
+        const downscaled = await downscaleImageInput({ base64: toBase64(item.formPdf), mediaType });
+        formInput = downscaled;
+        labelInput = downscaled;
+        timings.prepMs = Date.now() - prepStart;
     }
 
     // Parsers are injectable (default: real model-backed). Label and form are

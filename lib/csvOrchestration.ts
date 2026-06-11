@@ -12,6 +12,7 @@
  */
 import { runPool, type ItemOutcome, type ItemTimings, type BatchErrorInfo, type BatchSummary, type PoolOptions } from "./orchestration";
 import { resolveLabelImages } from "./imageResolve";
+import { downscaleImageInputs } from "./imageDownscale";
 import { parseLabel } from "./parsers";
 import { verify } from "./matching";
 import { ExtractionError } from "./extraction";
@@ -88,6 +89,10 @@ async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<
         // not transient — re-running won't help, so they're not retryable.
         return fail({ kind: "extraction", stage: "label", message: `Could not resolve label image: ${msg(e)}`, retryable: false });
     }
+    // Shrink each view to the vision cap before the model call (covers loose
+    // AND ZIP-transported images — the one place all of them pass through).
+    // Never throws: an undecodable image passes through for the model to judge.
+    inputs = await downscaleImageInputs(inputs);
     timings.resolveMs = Date.now() - resolveStart;
 
     let labelRes;

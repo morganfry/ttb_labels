@@ -88,6 +88,14 @@ running it see docs/setup.md.
   mupdf is ESM+WASM: import it dynamically and keep it in next.config.js
   serverExternalPackages. If the label read ever moves to Opus 4.7+, raise
   visionMaxEdgePx toward 2576 to use its high-res support.
+- **Flat images are downscaled SERVER-side too** (imageDownscale.ts, sharp) —
+  deliberately not in the browser, so ONE choke point covers every image intake:
+  upload-tab images (processOne's image branch, downscaled once and shared by
+  both parsers), CSV loose images, and images inside the CSV ZIP (after
+  resolveLabelImages in processOneCsv — the client couldn't touch those without
+  rebuilding the archive). Same never-break rule: decode failure passes the
+  original through. This is also why csvImageMaxBytes is a memory bound, not an
+  API-limit bound — don't "re-align" it to the API's 10 MB image cap.
 - **Label and form can run on different models** (config.labelModel /
   config.formModel; LABEL_MODEL / FORM_MODEL env). The label is verbatim
   transcription, so it defaults to a faster/cheaper tier; the form stays on the
