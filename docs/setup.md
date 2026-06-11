@@ -53,17 +53,20 @@ FORM_MODEL=claude-...    # optional; model for the form read (default: MODEL / c
 BATCH_CONCURRENCY=6      # optional concurrency override
 LATENCY_TARGET_MS=5000   # optional; per-label latency target the UI flags against (default 5s)
 UPLOAD_MAX_BYTES=268435456       # optional; max request body before buffering — DoS guard (default 256 MiB)
-VERIFY_MAX_FILE_BYTES=52428800   # optional; per-file size cap on the upload tab (default 50 MiB)
+VERIFY_MAX_FILE_BYTES=25165824   # optional; per-file size cap on the upload tab (default 24 MiB — sized so the base64 form fits the model API's 32 MB request ceiling)
 VERIFY_MAX_ITEMS=500             # optional; max applications in one /api/verify request
 CSV_MAX_BYTES=16777216           # optional; max CSV file size (default 16 MiB)
 CSV_MAX_ROWS=5000                # optional; max CSV data rows per file
-CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for uploaded CSV label images (default 12 MiB)
+CSV_IMAGE_MAX_BYTES=12582912     # optional; per-image size cap for uploaded CSV label images (default 12 MiB; a memory bound — images are downscaled server-side before the model call)
 CSV_MAX_IMAGES_PER_ROW=6         # optional; max label images per CSV row
 CSV_IMAGE_ZIP_MAX_BYTES=104857600       # optional; max uploaded image-ZIP size, compressed (default 100 MiB)
 CSV_IMAGE_ZIP_MAX_TOTAL_BYTES=209715200 # optional; max total DEcompressed image-ZIP bytes — zip-bomb guard (default 200 MiB)
 PDF_ZIP_MAX_BYTES=209715200       # optional; max dropped PDF-ZIP size, compressed (default 200 MiB)
-PDF_ZIP_MAX_ENTRY_BYTES=52428800  # optional; max decompressed size of one PDF in the ZIP (default 50 MiB)
+PDF_ZIP_MAX_ENTRY_BYTES=25165824  # optional; max decompressed size of one PDF in the ZIP (default 24 MiB, matching VERIFY_MAX_FILE_BYTES)
 PDF_ZIP_MAX_TOTAL_BYTES=524288000 # optional; max total decompressed PDFs from one ZIP (default 500 MiB)
+VISION_MAX_EDGE_PX=1568           # optional; long-edge pixel cap for rasterized PDF pages and downscaled images (default 1568 — the models' native vision limit; raise toward 2576 only on Opus 4.7+)
+RASTER_JPEG_QUALITY=85            # optional; JPEG quality for rasterized/downscaled inputs (default 85)
+RASTER_MAX_PAGES=8                # optional; max pages to rasterize per PDF slice — larger documents are sent as PDF instead (default 8)
 ```
 `.env.local` is gitignored and read only in local development.
 

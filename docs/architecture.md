@@ -56,8 +56,11 @@ Notes:
 Two intake fronts — the **upload tab** (combined PDFs or flat images) and
 **CSV** — converge on one shared spine (`runPool` → `matching.verify` →
 `persistence`). On the upload front a PDF is sliced (page 1 = form, artwork pages
-= label) while an image can't be, so the one image is read by both parsers; a
-dropped ZIP is expanded client-side (`zipDocs`) into individual PDF/image items.
+= label) and each slice is rasterized to resolution-capped JPEGs (`pdfRaster`,
+the form page accompanied by its extracted text layer), while an image can't be
+sliced, so the one image is downscaled (`imageDownscale`) and read by both
+parsers; a dropped ZIP is expanded client-side (`zipDocs`) into individual
+PDF/image items.
 The CSV path swaps the *front* entirely: application data comes from columns and
 label images are resolved by name from the uploaded images (loose files and/or a
 ZIP). From matching onward all paths are identical.
@@ -83,6 +86,8 @@ flowchart LR
         orch["orchestration<br/>processBatch · runPool · processOne"]
         csvorch["csvOrchestration<br/>processCsvBatch · processOneCsv"]
         slice["pdfFirstPage<br/>extractFirstPage · extractLabelArtwork (PDF only)"]
+        raster["pdfRaster (mupdf)<br/>page → capped JPEG (+ form text layer)"]
+        downscale["imageDownscale (sharp)<br/>flat/CSV image → capped JPEG"]
         zipdocs["zipDocs (pure)<br/>expand upload ZIP → PDF/image items"]
         mediatype["mediaType (pure)<br/>name → PDF / image / ZIP + media type"]
         csvparse["csvParse<br/>columns → ApplicationData + image refs"]
@@ -111,11 +116,11 @@ flowchart LR
     rsearch --> persistence
     rresult --> persistence
 
-    orch --> slice & parsers
+    orch --> slice & raster & downscale & parsers
     zipdocs --> mediatype
     csvparse --> mediatype
     imgs --> mediatype
-    csvorch --> csvparse & imgs & parsers
+    csvorch --> csvparse & imgs & downscale & parsers
     orch -->|"runPool"| matching
     csvorch -->|"runPool"| matching
     orch --> persistence
@@ -145,10 +150,13 @@ Reading aids:
 
 ## 3. Verification sequence (one PDF or image application)
 
-The runtime view: slice → transcribe (two models, concurrently) → judge →
-persist → stream, with results flowing back per item rather than after the whole
-batch (the per-label latency requirement). Slice is a PDF-only step; an image
-skips it and is read whole by both parsers.
+The runtime view: slice → rasterize → transcribe (two models, concurrently) →
+judge → persist → stream, with results flowing back per item rather than after
+the whole batch (the per-label latency requirement). Slice + rasterize are
+PDF-only steps; an image skips them and is downscaled, then read whole by both
+parsers. Rasterization caps every page at the model's native resolution
+(`VISION_MAX_EDGE_PX`) and pairs the form page with its extracted text layer;
+any rasterization failure falls back to sending that PDF slice as-is.
 
 ```mermaid
 sequenceDiagram
@@ -167,9 +175,10 @@ sequenceDiagram
 
     loop each application (bounded concurrency)
         API->>Pool: processOne(item)
-        opt PDF input (an image skips slicing — one image feeds both parsers)
+        opt PDF input (an image skips this — it is downscaled, then feeds both parsers)
             Pool->>Slice: extractFirstPage (form → page 1)
             Pool->>Slice: extractLabelArtwork (label → image pages)
+            Pool->>Pool: rasterize both slices → capped JPEGs<br/>(form + its text layer; PDF fallback on failure)
         end
         par label + form, concurrently
             Pool->>Model: parseLabel (Haiku)
@@ -189,13 +198,15 @@ sequenceDiagram
 ```
 
 **Image variant.** Same diagram with the `opt` slicing block skipped: the one
-uploaded image (which shows the whole application) is fed verbatim to both the
-label and form parsers. Everything from transcription onward is identical.
+uploaded image (which shows the whole application) is downscaled to the vision
+cap once and fed to both the label and form parsers. Everything from
+transcription onward is identical.
 
 **CSV variant.** Same diagram with the front swapped: instead of slicing a PDF
 and model-reading the form, `csvParse` turns the row's columns into the
 application data, and `imageResolve`/`zipImages` resolve the label images by name
-from the uploaded set (loose files and/or a ZIP). The label is still model-read;
+from the uploaded set (loose files and/or a ZIP), then downscaled to the same
+vision cap. The label is still model-read;
 `verify`, persistence, streaming, and the shared `runPool` are identical.
 
 ---
