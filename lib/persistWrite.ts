@@ -1,5 +1,6 @@
 import { transaction } from "./db";
 import type { VerificationResult } from "./schema";
+import type { BatchErrorInfo } from "./orchestration";
 import { randomUUID } from "crypto";
 
 /**
@@ -26,5 +27,29 @@ export async function saveResult(result: VerificationResult): Promise<void> {
                 [randomUUID(), id, f.field, f.status, f.labelValue, f.applicationValue, f.score ?? null, JSON.stringify(f.issues)],
             );
         }
+    });
+}
+
+/**
+ * Persist a processing failure (extraction/matching error — no verdict exists)
+ * so the run leaves an audit row instead of vanishing from history. The serial
+ * is unknown (the form was never read), so the file/row name goes in brand_name
+ * — the only identifier we have, and the brand filter's ILIKE finds it. A single
+ * pseudo field row carries the human-readable reason for the detail view.
+ */
+export async function saveError(name: string, error: BatchErrorInfo): Promise<void> {
+    const id = randomUUID();
+    await transaction(async (q) => {
+        await q(
+            `INSERT INTO verification (id, serial_number, product_type, overall, brand_name)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id, "(error)", "unknown", "error", name],
+        );
+        await q(
+            `INSERT INTO field_result (id, verification_id, field, status, label_value, application_value, score, issues)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [randomUUID(), id, "processing", "unreadable", null, null, null,
+             JSON.stringify([`${error.stage}: ${error.message}`])],
+        );
     });
 }

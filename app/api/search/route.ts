@@ -49,8 +49,8 @@ function numParam(v: string | null, fallback: number): number {
     const n = v ? parseInt(v, 10) : NaN;
     return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
-function isOverall(v: string | null): v is "pass" | "needsReview" | "fail" {
-    return v === "pass" || v === "needsReview" || v === "fail";
+function isOverall(v: string | null): v is "pass" | "needsReview" | "fail" | "error" {
+    return v === "pass" || v === "needsReview" || v === "fail" || v === "error";
 }
 function isProductType(v: string | null): v is "wine" | "distilledSpirits" | "maltBeverages" {
     return v === "wine" || v === "distilledSpirits" || v === "maltBeverages";

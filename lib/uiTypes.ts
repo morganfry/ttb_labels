@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { CheckCircle2, AlertTriangle, XCircle, Eye } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, Eye, Ban } from "lucide-react";
 import type { ItemTimings, BatchErrorInfo } from "./orchestration";
 import type { VerificationResult } from "./schema";
 
@@ -27,6 +27,7 @@ export function formatLatency(ms: number): string {
 }
 
 export const FIELD_LABELS: Record<string, string> = {
+    processing: "Processing", // pseudo field on persisted error rows (no verdict)
     brandName: "Brand name",
     classType: "Class / type",
     alcoholContent: "Alcohol content",
@@ -59,6 +60,10 @@ export const OVERALL_META: Record<string, OverallMeta> = {
     pass:        { label: "Passed",       chipBg: "bg-green-100", chipText: "text-green-700", Icon: CheckCircle2 },
     needsReview: { label: "Needs review", chipBg: "bg-amber-100", chipText: "text-amber-700", Icon: AlertTriangle },
     fail:        { label: "Failed",       chipBg: "bg-red-100",   chipText: "text-red-700",   Icon: XCircle },
+    // A processing failure, not a compliance verdict — slate, not red, so an
+    // unreadable/errored document never reads as a violation (same asymmetry
+    // as the confidence gate in matching).
+    error:       { label: "Error",        chipBg: "bg-slate-200", chipText: "text-slate-700", Icon: Ban },
 };
 
 let idc = 0;

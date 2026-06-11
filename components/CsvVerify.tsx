@@ -276,7 +276,8 @@ export default function CsvVerify() {
     const summary = resultItems.reduce((a: Record<string, number>, it) => {
         a[it.result.overall] = (a[it.result.overall] || 0) + 1;
         return a;
-    }, {});
+    }, {} as Record<string, number>);
+    if (errorItems.length) summary.error = errorItems.length; // errored rows count too, under their own chip
 
     return (
         <>
@@ -475,9 +476,9 @@ export default function CsvVerify() {
 
             {resultItems.length > 0 && <ResultsTable items={resultItems} />}
 
-            {/* Only when a verdict was actually persisted (errored-only runs save
-                nothing), so the link never points at an empty history of this run. */}
-            {resultItems.length > 0 && !processing && <ReviewHistoryLink />}
+            {/* Anything that finished was persisted — verdicts as results, errored
+                rows as audit rows — so the history has this run. */}
+            {(resultItems.length > 0 || errorItems.length > 0) && !processing && <ReviewHistoryLink />}
 
             {!hasResults && <CsvFormatGuide onDownload={downloadSample} />}
         </>

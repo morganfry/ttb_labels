@@ -33,7 +33,7 @@ function FileRow({ item, onRemove, disabled }:
         processing:   <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-blue-600"><Loader2 size={14} className="animate-spin" /> Reading…</span>,
     };
     const statusNode = item.status === "done"
-        ? (item.error ? <span className="whitespace-nowrap text-xs text-red-700">Failed</span> : null)
+        ? (item.error ? <span className="whitespace-nowrap text-xs text-slate-600">Error</span> : null)
         : stateText[item.status];
 
     return (

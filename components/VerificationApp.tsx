@@ -170,8 +170,10 @@ export default function VerificationApp() {
     const hasResults = doneCount > 0;
     const allDone = docItems.length > 0 && doneCount === docItems.length;
 
+    const erroredItems = docItems.filter((it) => it.status === "done" && it.error);
     const summary = docItems.reduce((a: Record<string, number>, it) => {
         if (it.result) a[it.result.overall] = (a[it.result.overall] || 0) + 1;
+        else if (it.error) a.error = (a.error || 0) + 1; // errored reads count too, under their own chip
         return a;
     }, {});
 
@@ -233,11 +235,20 @@ export default function VerificationApp() {
                     </div>
                 )}
 
+                {erroredItems.length > 0 && (
+                    <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+                        <div className="mb-1.5 font-medium">{erroredItems.length} application{erroredItems.length === 1 ? "" : "s"} could not be processed:</div>
+                        <ul className="ml-1 list-inside list-disc space-y-0.5">
+                            {erroredItems.map((it) => <li key={it.id}><span className="font-medium">{it.name}</span>: {it.error?.message ?? "Unknown error."}</li>)}
+                        </ul>
+                    </div>
+                )}
+
                 {hasResults && <ResultsTable items={docItems.filter(isCompleted)} />}
 
-                {/* Only when a verdict was actually persisted (errored items save
-                    nothing), so the link never points at an empty history of this run. */}
-                {docItems.some((it) => it.result) && !processing && <ReviewHistoryLink />}
+                {/* Anything that finished was persisted — verdicts as results,
+                    errored reads as audit rows — so the history has this run. */}
+                {docItems.some((it) => it.status === "done") && !processing && <ReviewHistoryLink />}
         </>
     );
 }

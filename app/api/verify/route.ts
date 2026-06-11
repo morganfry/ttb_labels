@@ -10,7 +10,7 @@
  */
 import { processBatch, type WorkItem, type ItemOutcome } from "@/lib/orchestration";
 import { workItemMediaType, isDocName } from "@/lib/mediaType";
-import { saveResult, migrate } from "@/lib/persistence";
+import { saveResult, saveError, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 
 export const runtime = "nodejs";   // needs Buffer / pdf-lib (not edge)
@@ -79,6 +79,7 @@ export async function POST(req: Request): Promise<Response> {
                 const summary = await processBatch(items, {
                     signal: abort.signal,
                     persist: saveResult, // results are searchable as a side effect of the run
+                    persistError: saveError, // failed reads leave an audit row too
                     onResult: (o: ItemOutcome) => write({ type: "result", ...o }),
                     onProgress: (done, total) => write({ type: "progress", done, total }),
                 });

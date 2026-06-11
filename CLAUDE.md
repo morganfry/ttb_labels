@@ -169,5 +169,9 @@ wrong/missing warning fails regardless of confidence. Preserve this asymmetry.
 ## Care
 - This is compliance tooling: correctness over cleverness. Don't trade
   extraction reliability for marginal token savings.
-- Retention: store extracted text + verdicts only. Never persist uploaded
-  file bytes (no schema columns exist for them — keep it that way).
+- Retention: store extracted text + verdicts only — plus, for items whose
+  processing FAILED, an `overall='error'` audit row (file/row name + error
+  message; saveError in persistWrite.ts) so failures don't vanish from history.
+  An error row is an audit record, never a compliance verdict (slate "Error"
+  chip, not red "Failed" — same asymmetry as the confidence gate). Never persist
+  uploaded file bytes (no schema columns exist for them — keep it that way).

@@ -75,6 +75,9 @@ export interface BatchOptions {
     onProgress?: (done: number, total: number) => void;
     /** Optional save hook; a failure here is non-fatal (see processOne). */
     persist?: (result: VerificationResult) => Promise<void>;
+    /** Optional save hook for failed outcomes, so an errored item still leaves
+     *  an audit row. Same non-fatal policy as `persist`. */
+    persistError?: (name: string, error: BatchErrorInfo) => Promise<void>;
     /** Cancels the batch (e.g. client disconnect). */
     signal?: AbortSignal;
     /** Global model override applied to both sides unless a per-side one is set. */
@@ -170,7 +173,16 @@ export async function runPool<T>(
 async function processOne(item: WorkItem, opts: BatchOptions): Promise<ItemOutcome> {
     const start = Date.now();
     const timings: ItemTimings = {};
-    const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start, timings });
+    // Every failure exit runs through here so errored items are persisted too
+    // (an audit row, not a verdict). Persist failures stay non-fatal: the
+    // outcome still streams to the UI either way.
+    const fail = async (error: BatchErrorInfo): Promise<ItemOutcome> => {
+        if (opts.persistError) {
+            try { await opts.persistError(item.name, error); }
+            catch (e) { console.error(`Persist (error) failed for ${item.name}:`, msg(e)); }
+        }
+        return { id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start, timings };
+    };
 
     // Resolve each parser's input. PDFs are sliced (page 1 → form, artwork pages
     // → label) so the model never sees boilerplate pages. A flat image can't be

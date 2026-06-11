@@ -4,6 +4,7 @@ export const PRODUCT_LABELS: Record<string, string> = {
     wine: "Wine",
     distilledSpirits: "Distilled Spirits",
     maltBeverages: "Malt Beverages",
+    unknown: "—", // error rows: the form was never read, so no product type exists
 };
 
 export type Summary = {

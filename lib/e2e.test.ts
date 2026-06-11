@@ -106,6 +106,24 @@ describe("end-to-end pipeline (stubbed parsers)", () => {
         expect(outcomes[0].ok).toBe(false);
     });
 
+    it("a failed outcome reaches persistError (audit row), and a persistError throw is non-fatal", async () => {
+        const item: WorkItem = { id: "1", name: "boom.pdf", labelPdf: MINIMAL_PDF, formPdf: MINIMAL_PDF };
+        const outcomes: ItemOutcome[] = [];
+        const persisted: Array<{ name: string; stage: string }> = [];
+        const summary = await processBatch([item], {
+            onResult: (o) => outcomes.push(o),
+            parsers: {
+                parseLabel: vi.fn(async () => { throw new Error("model refused"); }),
+                parseForm: vi.fn(async () => ok(SCENARIOS[0].form)),
+            },
+            persistError: async (name, error) => { persisted.push({ name, stage: error.stage }); throw new Error("db down"); },
+        });
+        // The error was offered for persistence and the throw didn't eat the outcome.
+        expect(persisted).toEqual([{ name: "boom.pdf", stage: "label" }]);
+        expect(outcomes[0].ok).toBe(false);
+        expect(summary.failed).toBe(1);
+    });
+
     it("image items skip PDF slicing and feed the one image to both parsers", async () => {
         // Deliberately NOT a PDF: if slicing ran, extractFirstPage would throw.
         const imageBytes = new TextEncoder().encode("\x89PNG\r\n\x1a\n fake png");

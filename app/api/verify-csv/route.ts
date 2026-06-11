@@ -14,7 +14,7 @@ import { processCsvBatch, type CsvWorkItem } from "@/lib/csvOrchestration";
 import { parseCsv } from "@/lib/csvParse";
 import { indexImageSources, type RawImageSource, type ZipImageIndex } from "@/lib/zipImages";
 import { isCsvName } from "@/lib/mediaType";
-import { saveResult, migrate } from "@/lib/persistence";
+import { saveResult, saveError, migrate } from "@/lib/persistence";
 import { config } from "@/lib/config";
 import type { ItemOutcome } from "@/lib/orchestration";
 
@@ -106,6 +106,7 @@ export async function POST(req: Request): Promise<Response> {
                 const summary = await processCsvBatch(items, {
                     signal: abort.signal,
                     persist: saveResult,
+                    persistError: saveError, // failed rows leave an audit row too
                     zipImages,
                     onResult: (o: ItemOutcome) => write({ type: "result", ...o }),
                     onProgress: (done, total) => write({ type: "progress", done, total }),

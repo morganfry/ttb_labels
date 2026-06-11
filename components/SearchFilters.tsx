@@ -19,7 +19,7 @@ export function SearchFilters({ filters, onChange, onSubmit, onClear, hasFilters
                 </Field>
                 <Field label="Outcome">
                     <select value={filters.overall} onChange={(e) => onChange("overall", e.target.value)} className={select}>
-                        <option value="">Any</option><option value="pass">Passed</option><option value="needsReview">Needs review</option><option value="fail">Failed</option>
+                        <option value="">Any</option><option value="pass">Passed</option><option value="needsReview">Needs review</option><option value="fail">Failed</option><option value="error">Error</option>
                     </select>
                 </Field>
                 <Field label="Product type">

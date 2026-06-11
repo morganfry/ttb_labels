@@ -1,5 +1,5 @@
 export { migrate } from "./db";
-export { saveResult } from "./persistWrite";
+export { saveResult, saveError } from "./persistWrite";
 export {
     search, getResult,
     type SearchQuery, type VerificationSummary, type SearchPage,

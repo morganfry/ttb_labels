@@ -1,15 +1,19 @@
 import { sql } from "./db";
 import type { VerificationResult, FieldResult, ProductType } from "./schema";
 
+/** Stored outcomes: the three verdicts plus "error" (a processing failure
+ *  persisted as an audit row — no verdict was reached). */
+export type StoredOverall = "pass" | "needsReview" | "fail" | "error";
+
 export interface SearchQuery {
     serialNumber?: string; brand?: string;
-    overall?: "pass" | "needsReview" | "fail"; productType?: ProductType;
+    overall?: StoredOverall; productType?: ProductType;
     fromDate?: string; toDate?: string; limit?: number; offset?: number;
 }
 
 export interface VerificationSummary {
     id: string; serialNumber: string; productType: ProductType;
-    overall: "pass" | "needsReview" | "fail"; brandName: string | null; createdAt: string;
+    overall: StoredOverall; brandName: string | null; createdAt: string;
 }
 
 export interface SearchPage {

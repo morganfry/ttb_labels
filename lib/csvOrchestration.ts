@@ -32,6 +32,8 @@ export interface CsvWorkItem {
 
 export interface CsvBatchOptions extends PoolOptions {
     persist?: (result: VerificationResult) => Promise<void>;
+    /** Optional save hook for failed outcomes (same policy as the PDF path). */
+    persistError?: (name: string, error: BatchErrorInfo) => Promise<void>;
     /** Global model override; the label read defaults to config.labelModel. */
     model?: string;
     labelModel?: string;
@@ -61,7 +63,15 @@ function csvAppConfidence(): Partial<Record<keyof ApplicationData, Confidence>> 
 async function processOneCsv(item: CsvWorkItem, opts: CsvBatchOptions): Promise<ItemOutcome> {
     const start = Date.now();
     const timings: ItemTimings = {};
-    const fail = (error: BatchErrorInfo): ItemOutcome => ({ id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start, timings });
+    // Every failure exit (including pre-failed CSV rows) runs through here so
+    // errored rows are persisted as audit rows; persist failures are non-fatal.
+    const fail = async (error: BatchErrorInfo): Promise<ItemOutcome> => {
+        if (opts.persistError) {
+            try { await opts.persistError(item.name, error); }
+            catch (e) { console.error(`Persist (error) failed for ${item.name}:`, msg(e)); }
+        }
+        return { id: item.id, name: item.name, ok: false, error, latencyMs: Date.now() - start, timings };
+    };
 
     // A row that failed CSV validation arrives pre-failed — surface it as-is.
     if (item.preError) return fail(item.preError);
